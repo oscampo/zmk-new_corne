@@ -52,42 +52,42 @@ layers:
   NUMBER:
   - {t: '$$mdi:transfer$$', type: trans}
   - Sft+1
-  - {t: Sft+2, s: Sft+@}
-  - {t: Sft+3, s: Sft+#}
-  - {t: Sft+4, s: Sft+$}
-  - {t: Sft+5, s: Sft+%}
+  - Sft+2
+  - Sft+3
+  - Sft+4
+  - Sft+5
   - {t: '$$mdi:minus-circle-outline$$', type: none}
-  - {t: Sft+6, s: Sft+^}
-  - {t: Sft+7, s: Sft+&}
-  - {t: Sft+8, s: Sft+*}
-  - {t: Sft+9, s: Sft+(}
-  - {t: Sft+0, s: Sft+)}
+  - Sft+6
+  - Sft+7
+  - Sft+8
+  - Sft+9
+  - Sft+0
   - {t: '$$mdi:backspace$$', type: backspace}
   - {t: '$$mdi:transfer$$', type: trans}
   - '1'
   - '2'
   - '3'
   - '4'
-  - {t: '5', s: '%'}
+  - '5'
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - '6'
-  - {t: '7', s: '&'}
-  - {t: '8', s: '*'}
-  - {t: '9', s: (}
-  - {t: '0', s: )}
+  - '7'
+  - '8'
+  - '9'
+  - '0'
   - {t: \, s: '|'}
   - {t: '$$mdi:transfer$$', type: trans}
-  - '{'
+  - {t: 'Sft+[', s: 'Sft+{'}
   - {t: '[', s: '{'}
   - <
   - '>'
   - {t: ']', s: '}'}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
-  - '}'
-  - +
+  - {t: 'Sft+]', s: 'Sft+}'}
+  - {t: Sft+=, s: Sft++}
   - {t: '-', s: _}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '=', s: +}
