@@ -68,13 +68,11 @@
         lower_layer {
             display-name = "NUMBER";
             bindings = <
-&trans  &kp N1           &kp N2          &kp N3        &kp N4        &kp N5                                &none         &kp N6           &kp N7           &kp N8           &kp N9           &kp N0    &kp BSPC
-&trans  &bt BT_CLR_ALL   &bt BT_SEL 0    &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3                   &none  &none  &none  &kp LEFT         &kp DOWN         &kp UP           &kp RIGHT        &kp HOME  &kp PG_UP
-&trans  &rgb_ug RGB_OFF  &rgb_ug RGB_ON  &trans        &trans        &rgb_ug RGB_EFF  &kp C_MUTE           &none         &rgb_ug RGB_EFR  &rgb_ug RGB_SPI  &rgb_ug RGB_BRI  &rgb_ug RGB_BRD  &kp END   &kp PG_DN
-                                         &trans        &trans        &trans                                              &kp INS          &kp DEL          &trans
+&trans  &kp LS(NUMBER_1)  &kp LS(N2)        &kp LS(N3)     &kp LS(N4)        &kp LS(N5)                         &none         &kp LS(N6)       &kp LS(N7)  &kp LS(N8)  &kp LS(N9)  &kp LS(N0)  &kp BSPC
+&trans  &kp NUMBER_1      &kp NUMBER_2      &kp NUMBER_3   &kp NUMBER_4      &kp N5                      &none  &none  &none  &kp NUMBER_6     &kp N7      &kp N8      &kp N9      &kp N0      &kp BACKSLASH
+&trans  &kp LEFT_BRACE    &kp LEFT_BRACKET  &kp LESS_THAN  &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp RIGHT_BRACE  &kp PLUS    &kp MINUS   &trans      &kp EQUAL   &kp LS(BACKSLASH)
+                                            &trans         &trans            &trans                                           &trans           &trans      &trans
             >;
-
-            sensor-bindings = <&scroll_encoder>;
         };
 
         raise_layer {
