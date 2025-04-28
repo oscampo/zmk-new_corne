@@ -96,7 +96,7 @@
         triple_dots: triple_dots {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_tap_time 1>, <&kp DOT &kp DOT &kp DOT &kp SPACE>;
+            bindings = <&macro_tap_time 1>, <&kp DOT &kp DOT &kp DOT>;
 
             label = "TRIPLE_DOTS";
         };
@@ -116,7 +116,7 @@
             #binding-cells = <0>;
             bindings =
                 <&macro_tap_time 1>,
-                <&kp GRAVE &kp GRAVE &kp GRAVE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp UP_ARROW>;
+                <&kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp UP_ARROW>;
 
             label = "CODE_BLOCK";
         };
