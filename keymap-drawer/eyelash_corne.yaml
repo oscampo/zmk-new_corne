@@ -40,10 +40,10 @@ layers:
   - N
   - M
   - {t: ',', s: <}
-  - {t: ., s: '>'}
+  - '&td_ht'
   - {t: /, s: '?'}
   - $$mdi:apple-keyboard-option$$
-  - LGUI
+  - $$mdi:apple-keyboard-control$$
   - {t: '$$mdi:apple-keyboard-option$$', h: Fn}
   - {t: '$$mdi:keyboard-return$$', h: SYMBOL}
   - {t: '$$mdi:keyboard-space$$', h: NUMBER}
