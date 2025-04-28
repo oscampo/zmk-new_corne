@@ -54,7 +54,12 @@
         mil_bendiciones: mil_bendiciones {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&kp M &kp B &kp M &kp I &kp L &kp SPACE &kp B &kp E &kp N &kp D &kp I &kp C &kp I &kp O &kp N &kp E &kp S>;
+            bindings =
+                <&macro_press>,
+                <&kp M &kp B>,
+                <&macro_release>,
+                <&kp M &kp I &kp L &kp SPACE &kp B &kp E &kp N &kp D &kp I &kp C &kp I &kp O &kp N &kp E &kp S>;
+
             label = "MIL_BENDICIONES";
         };
     };
