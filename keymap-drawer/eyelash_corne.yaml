@@ -29,7 +29,7 @@ layers:
   - L
   - {t: '''', s: '"'}
   - {t: '$$mdi:keyboard-return$$', h: '$$mdi:apple-keyboard-shift$$'}
-  - '&td0'
+  - {t: '$$mdi:apple-keyboard-caps$$', h: '$$mdi:apple-keyboard-shift$$'}
   - Z
   - X
   - C
