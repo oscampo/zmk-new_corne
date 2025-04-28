@@ -28,12 +28,13 @@
 
 / {
     behaviors {
-td_mt: tap_dance_mod_tap {
+        td_mt: tap_dance_mod_tap {
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
             tapping-term-ms = <200>;
-            bindings = <&mt LSHIFT CAPSLOCK>, <&kp LCTRL>;
+            bindings = <&mt LS(SEMICOLON) PERIOD>, <&triple_dots>;
         };
+
         td0: td0 {
             compatible = "zmk,behavior-tap-dance";
             display-name = "Shift/Caps Lock Tap Dance";
@@ -91,9 +92,9 @@ td_mt: tap_dance_mod_tap {
         default_layer {
             display-name = "QWERTY";
             bindings = <
-&kp ESCAPE  &kp Q  &kp W  &kp E             &kp R           &kp T                            &none         &kp Y        &kp U       &kp I      &kp O       &kp P             &kp BSPC
-&kp TAB     &kp A  &kp S  &kp D             &kp F           &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L       &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
-&td0        &kp Z  &kp X  &kp C             &kp V           &kp B        &kp SPACE           &none         &kp N        &kp M       &kp COMMA  &kp PERIOD  &kp FSLH          &kp LEFT_ALT
+&kp ESCAPE  &kp Q  &kp W  &kp E             &kp R           &kp T                            &none         &kp Y        &kp U       &kp I      &kp O   &kp P             &kp BSPC
+&kp TAB     &kp A  &kp S  &kp D             &kp F           &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L   &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
+&td0        &kp Z  &kp X  &kp C             &kp V           &kp B        &kp SPACE           &none         &kp N        &kp M       &kp COMMA  &td_mt  &kp FSLH          &kp LEFT_ALT
                           &kp LEFT_CONTROL  &lt 3 LEFT_ALT  &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE  &kp RALT
             >;
 
