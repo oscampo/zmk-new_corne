@@ -50,7 +50,7 @@ layers:
   - $$mdi:backspace-reverse-outline$$
   - $$mdi:apple-keyboard-option$$
   NUMBER:
-  - {t: '$$mdi:transfer$$', type: trans}
+  - {t: '`', s: '~'}
   - Sft+1
   - Sft+2
   - Sft+3
@@ -63,7 +63,7 @@ layers:
   - Sft+9
   - Sft+0
   - {t: '$$mdi:backspace$$', type: backspace}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - {t: Sft+`, s: Sft+~}
   - '1'
   - '2'
   - '3'
@@ -250,3 +250,5 @@ combos:
   k: '&mil_bendiciones'
 - p: [18, 37]
   k: '&mil_gracias'
+- p: [38, 39]
+  k: {t: ;, s: ':'}
