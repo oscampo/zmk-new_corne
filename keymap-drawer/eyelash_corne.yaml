@@ -50,7 +50,7 @@ layers:
   - $$mdi:backspace-reverse-outline$$
   - $$mdi:apple-keyboard-option$$
   NUMBER:
-  - {t: '`', s: '~'}
+  - {t: '`', h: '&code_block', s: '~'}
   - Sft+1
   - Sft+2
   - Sft+3
