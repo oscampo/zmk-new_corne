@@ -54,13 +54,17 @@
         mil_bendiciones: mil_bendiciones {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings =
-                <&macro_press>,
-                <&kp M &kp B>,
-                <&macro_release>,
-                <&kp M &kp I &kp L &kp SPACE &kp B &kp E &kp N &kp D &kp I &kp C &kp I &kp O &kp N &kp E &kp S>;
-
+            bindings = <&kp M &kp I &kp L &kp SPACE &kp B &kp E &kp N &kp D &kp I &kp C &kp I &kp O &kp N &kp E &kp S>;
             label = "MIL_BENDICIONES";
+        };
+    };
+
+    combos {
+        compatible = "zmk,combos";
+
+        cmb_mil_bendiciones {
+            bindings = <&mil_bendiciones>;
+            key-positions = <33 37>;
         };
     };
 
