@@ -56,6 +56,15 @@
             label = "WIN_IOS";
             #binding-cells = <1>;
         };
+
+        bhv_code_block: bhv_code_block {
+            compatible = "zmk,behavior-hold-tap";
+            label = "BHV_CODE_BLOCK";
+            bindings = <&code_block>, <&kp>;
+
+            #binding-cells = <2>;
+            tapping-term-ms = <150>;
+        };
     };
 
     rgb_encoder: rgb_encoder {
@@ -100,6 +109,16 @@
 
             label = "MIL_GRACIAS";
         };
+
+        code_block: code_block {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings =
+                <&macro_tap_time 1>,
+                <&kp GRAVE &kp GRAVE &kp GRAVE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp UP_ARROW>;
+
+            label = "CODE_BLOCK";
+        };
     };
 
     combos {
@@ -139,10 +158,10 @@
         lower_layer {
             display-name = "NUMBER";
             bindings = <
-&kp GRAVE      &kp LS(NUMBER_1)      &kp LS(NUMBER_2)  &kp LS(NUMBER_3)  &kp LS(NUMBER_4)  &kp LS(NUMBER_5)                   &none         &kp LS(NUMBER_6)       &kp LS(NUMBER_7)  &kp LS(NUMBER_8)  &kp LS(NUMBER_9)  &kp LS(NUMBER_0)  &kp BSPC
-&kp LS(GRAVE)  &kp NUMBER_1          &kp NUMBER_2      &kp NUMBER_3      &kp NUMBER_4      &kp NUMBER_5                &none  &none  &none  &kp NUMBER_6           &kp NUMBER_7      &kp NUMBER_8      &kp NUMBER_9      &kp NUMBER_0      &kp BACKSLASH
-&trans         &kp LS(LEFT_BRACKET)  &kp LEFT_BRACKET  &kp LESS_THAN     &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp LS(RIGHT_BRACKET)  &kp LS(EQUAL)     &kp MINUS         &trans            &kp EQUAL         &kp LS(BACKSLASH)
-                                                       &trans            &trans            &trans                                           &trans                 &trans            &trans
+&bhv_code_block 0 GRAVE  &kp LS(NUMBER_1)      &kp LS(NUMBER_2)  &kp LS(NUMBER_3)  &kp LS(NUMBER_4)  &kp LS(NUMBER_5)                   &none         &kp LS(NUMBER_6)       &kp LS(NUMBER_7)  &kp LS(NUMBER_8)  &kp LS(NUMBER_9)  &kp LS(NUMBER_0)  &kp BSPC
+&kp LS(GRAVE)            &kp NUMBER_1          &kp NUMBER_2      &kp NUMBER_3      &kp NUMBER_4      &kp NUMBER_5                &none  &none  &none  &kp NUMBER_6           &kp NUMBER_7      &kp NUMBER_8      &kp NUMBER_9      &kp NUMBER_0      &kp BACKSLASH
+&trans                   &kp LS(LEFT_BRACKET)  &kp LEFT_BRACKET  &kp LESS_THAN     &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp LS(RIGHT_BRACKET)  &kp LS(EQUAL)     &kp MINUS         &trans            &kp EQUAL         &kp LS(BACKSLASH)
+                                                                 &trans            &trans            &trans                                           &trans                 &trans            &trans
             >;
         };
 
