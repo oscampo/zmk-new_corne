@@ -116,7 +116,7 @@
             #binding-cells = <0>;
             bindings =
                 <&macro_tap_time 1>,
-                <&kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp UP_ARROW>;
+                <&kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp UP_ARROW>;
 
             label = "CODE_BLOCK";
         };
