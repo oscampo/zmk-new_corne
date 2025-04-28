@@ -32,7 +32,7 @@
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
             tapping-term-ms = <200>;
-            bindings = <&mt LS(SEMICOLON) PERIOD>, <&triple_dots>;
+            bindings = <&ht 0 PERIOD>, <&kp COLON>;
         };
 
         td0: td0 {
@@ -40,6 +40,15 @@
             display-name = "Shift/Caps Lock Tap Dance";
             #binding-cells = <0>;
             bindings = <&kp LEFT_SHIFT>, <&kp CAPS>;
+        };
+
+        ht: ht {
+            compatible = "zmk,behavior-hold-tap";
+            label = "HT";
+            bindings = <&triple_dots>, <&kp>;
+
+            #binding-cells = <2>;
+            tapping-term-ms = <200>;
         };
     };
 
@@ -75,6 +84,16 @@
 
             label = "TRIPLE_DOTS";
         };
+
+        mil_gracias: mil_gracias {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings =
+                <&macro_tap_time 1>,
+                <&kp M &kp I &kp L &kp SPACE &kp G &kp R &kp A &kp C &kp I &kp A &kp S>;
+
+            label = "MIL_GRACIAS";
+        };
     };
 
     combos {
@@ -83,6 +102,11 @@
         cmb_mil_bendiciones {
             bindings = <&mil_bendiciones>;
             key-positions = <33 37>;
+        };
+
+        cmb_mil_gracias {
+            bindings = <&mil_gracias>;
+            key-positions = <18 37>;
         };
     };
 
@@ -93,7 +117,7 @@
             display-name = "QWERTY";
             bindings = <
 &kp ESCAPE  &kp Q  &kp W  &kp E             &kp R           &kp T                            &none         &kp Y        &kp U       &kp I      &kp O   &kp P             &kp BSPC
-&kp TAB     &kp A  &kp S  &kp D             &kp F           &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L   &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
+&kp TAB     &kp A  &kp S  &kp D             &mt LEFT_ALT F  &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L   &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
 &td0        &kp Z  &kp X  &kp C             &kp V           &kp B        &kp SPACE           &none         &kp N        &kp M       &kp COMMA  &td_mt  &kp FSLH          &kp LEFT_ALT
                           &kp LEFT_CONTROL  &lt 3 LEFT_ALT  &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE  &kp RALT
             >;
