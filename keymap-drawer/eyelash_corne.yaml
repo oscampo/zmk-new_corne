@@ -18,7 +18,7 @@ layers:
   - A
   - S
   - D
-  - F
+  - {t: F, h: '$$mdi:apple-keyboard-option$$'}
   - G
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
@@ -199,3 +199,5 @@ layers:
 combos:
 - p: [33, 37]
   k: '&mil_bendiciones'
+- p: [18, 37]
+  k: '&mil_gracias'

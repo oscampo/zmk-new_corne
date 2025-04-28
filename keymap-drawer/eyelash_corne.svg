@@ -369,6 +369,7 @@ rect.held, rect.combo.held {
 <rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
 <text x="0" y="-4" class="key tap">F</text>
+<use href="#mdi:apple-keyboard-option" xlink:href="#mdi:apple-keyboard-option" x="-8" y="9" height="15" width="15.0" class="key hold glyph mdi:apple-keyboard-option"/>
 </g>
 <g transform="translate(308, 97)" class="key keypos-18">
 <rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
@@ -535,6 +536,12 @@ rect.held, rect.combo.held {
 <path d="M518,150 l191,-3" class="combo"/>
 <rect rx="6" ry="6" x="504" y="137" width="28" height="26" class="combo"/>
 <text x="518" y="150" class="combo tap"><tspan style="font-size: 60%">&amp;mil_bend…</tspan></text>
+</g>
+<g class="combo combopos-1">
+<path d="M518,122 l-191,-22" class="combo"/>
+<path d="M518,122 l191,22" class="combo"/>
+<rect rx="6" ry="6" x="504" y="109" width="28" height="26" class="combo"/>
+<text x="518" y="122" class="combo tap"><tspan style="font-size: 60%">&amp;mil_grac…</tspan></text>
 </g>
 </g>
 </g>
@@ -795,6 +802,12 @@ rect.held, rect.combo.held {
 <rect rx="6" ry="6" x="504" y="137" width="28" height="26" class="combo"/>
 <text x="518" y="150" class="combo tap"><tspan style="font-size: 60%">&amp;mil_bend…</tspan></text>
 </g>
+<g class="combo combopos-1">
+<path d="M518,122 l-191,-22" class="combo"/>
+<path d="M518,122 l191,22" class="combo"/>
+<rect rx="6" ry="6" x="504" y="109" width="28" height="26" class="combo"/>
+<text x="518" y="122" class="combo tap"><tspan style="font-size: 60%">&amp;mil_grac…</tspan></text>
+</g>
 </g>
 </g>
 <g transform="translate(40, 637)" class="layer-SYMBOL">
@@ -1051,6 +1064,12 @@ rect.held, rect.combo.held {
 <path d="M518,150 l191,-3" class="combo"/>
 <rect rx="6" ry="6" x="504" y="137" width="28" height="26" class="combo"/>
 <text x="518" y="150" class="combo tap"><tspan style="font-size: 60%">&amp;mil_bend…</tspan></text>
+</g>
+<g class="combo combopos-1">
+<path d="M518,122 l-191,-22" class="combo"/>
+<path d="M518,122 l191,22" class="combo"/>
+<rect rx="6" ry="6" x="504" y="109" width="28" height="26" class="combo"/>
+<text x="518" y="122" class="combo tap"><tspan style="font-size: 60%">&amp;mil_grac…</tspan></text>
 </g>
 </g>
 </g>
@@ -1318,6 +1337,12 @@ rect.held, rect.combo.held {
 <path d="M518,150 l191,-3" class="combo"/>
 <rect rx="6" ry="6" x="504" y="137" width="28" height="26" class="combo"/>
 <text x="518" y="150" class="combo tap"><tspan style="font-size: 60%">&amp;mil_bend…</tspan></text>
+</g>
+<g class="combo combopos-1">
+<path d="M518,122 l-191,-22" class="combo"/>
+<path d="M518,122 l191,22" class="combo"/>
+<rect rx="6" ry="6" x="504" y="109" width="28" height="26" class="combo"/>
+<text x="518" y="122" class="combo tap"><tspan style="font-size: 60%">&amp;mil_grac…</tspan></text>
 </g>
 </g>
 </g>
