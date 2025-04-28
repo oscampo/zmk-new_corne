@@ -34,6 +34,22 @@
             #binding-cells = <0>;
             bindings = <&kp LEFT_SHIFT>, <&kp CAPS>;
         };
+
+        ht: ht {
+            compatible = "zmk,behavior-hold-tap";
+            label = "HT";
+            bindings = <&triple_dots>, <&kp>;
+
+            #binding-cells = <2>;
+            tapping-term-ms = <200>;
+        };
+
+        td_ht: td_ht {
+            compatible = "zmk,behavior-tap-dance";
+            label = "TD_HT";
+            #binding-cells = <0>;
+            bindings = <&ht 0 PERIOD>, <&kp LS(SEMICOLON)>;
+        };
     };
 
     rgb_encoder: rgb_encoder {
@@ -55,10 +71,18 @@
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             bindings =
-                <&macro_tap_time 10>,
+                <&macro_tap_time 1>,
                 <&kp M &kp I &kp L &kp SPACE &kp B &kp E &kp N &kp D &kp I &kp C &kp I &kp O &kp N &kp E &kp S>;
 
             label = "MIL_BENDICIONES";
+        };
+
+        triple_dots: triple_dots {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_tap_time 1>, <&kp DOT &kp DOT &kp DOT &kp SPACE>;
+
+            label = "TRIPLE_DOTS";
         };
     };
 
@@ -77,10 +101,10 @@
         default_layer {
             display-name = "QWERTY";
             bindings = <
-&kp ESCAPE  &kp Q  &kp W  &kp E     &kp R           &kp T                            &none         &kp Y        &kp U       &kp I      &kp O    &kp P             &kp BSPC
-&kp TAB     &kp A  &kp S  &kp D     &kp F           &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L    &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
-&td0        &kp Z  &kp X  &kp C     &kp V           &kp B        &kp SPACE           &none         &kp N        &kp M       &kp COMMA  &kp DOT  &kp FSLH          &kp LEFT_ALT
-                          &kp LGUI  &lt 3 LEFT_ALT  &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE  &kp RALT
+&kp ESCAPE  &kp Q  &kp W  &kp E             &kp R           &kp T                            &none         &kp Y        &kp U       &kp I      &kp O   &kp P             &kp BSPC
+&kp TAB     &kp A  &kp S  &kp D             &kp F           &kp G                     &none  &none  &none  &kp H        &kp J       &kp K      &kp L   &kp SINGLE_QUOTE  &mt RIGHT_SHIFT ENTER
+&td0        &kp Z  &kp X  &kp C             &kp V           &kp B        &kp SPACE           &none         &kp N        &kp M       &kp COMMA  &td_ht  &kp FSLH          &kp LEFT_ALT
+                          &kp LEFT_CONTROL  &lt 3 LEFT_ALT  &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE  &kp RALT
             >;
 
             // sensor-bindings = <&inc_dec_kp C_VOLUME_UP C_VOLUME_DOWN>;
