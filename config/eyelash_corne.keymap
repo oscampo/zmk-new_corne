@@ -31,8 +31,8 @@
         td_mt: tap_dance_mod_tap {
             compatible = "zmk,behavior-tap-dance";
             #binding-cells = <0>;
-            tapping-term-ms = <200>;
-            bindings = <&ht 0 PERIOD>, <&kp COLON>;
+            tapping-term-ms = <150>;
+            bindings = <&hold_tap 0 PERIOD>, <&kp COLON>;
         };
 
         td0: td0 {
@@ -42,13 +42,13 @@
             bindings = <&kp LEFT_SHIFT>, <&kp CAPS>;
         };
 
-        ht: ht {
+        hold_tap: hold_tap {
             compatible = "zmk,behavior-hold-tap";
-            label = "HT";
+            label = "HOLD_TAP";
             bindings = <&triple_dots>, <&kp>;
 
             #binding-cells = <2>;
-            tapping-term-ms = <200>;
+            tapping-term-ms = <150>;
         };
     };
 
@@ -148,10 +148,10 @@
         layer_3 {
             display-name = "Fn";
             bindings = <
-&studio_unlock  &kp F1        &kp F2        &kp F3        &kp F4        &kp F5                                      &mmv MOVE_UP                     &kp F6      &kp F7           &kp F8       &kp F9  &kp F10  &kp F11
-&bt BT_CLR_ALL  &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4                &mmv MOVE_LEFT  &mkp LCLK       &mmv MOVE_RIGHT  &bl BL_TOG  &rgb_ug RGB_TOG  &none        &none   &none    &kp F12
-&trans          &none         &trans        &bootloader   &trans        &none         &kp C_MUTE                    &mmv MOVE_DOWN                   &trans      &trans           &bootloader  &none   &none    &kp PAUSE_BREAK
-                                            &trans        &trans        &trans                                                                       &trans      &trans           &trans
+&studio_unlock  &kp F1        &kp F2        &kp F3        &kp F4        &kp F5                                      &mmv MOVE_UP                     &kp F6      &kp F7           &kp F8          &kp F9        &kp F10          &kp F11
+&bt BT_CLR_ALL  &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4                &mmv MOVE_LEFT  &mkp LCLK       &mmv MOVE_RIGHT  &mkp LCLK   &mmv MOVE_LEFT   &mmv MOVE_DOWN  &mmv MOVE_UP  &mmv MOVE_RIGHT  &kp F12
+&trans          &none         &trans        &bootloader   &trans        &none         &kp C_MUTE                    &mmv MOVE_DOWN                   &bl BL_TOG  &rgb_ug RGB_TOG  &bootloader     &none         &none            &kp PAUSE_BREAK
+                                            &trans        &trans        &trans                                                                       &mkp LCLK   &mkp RCLK        &trans
             >;
         };
     };
