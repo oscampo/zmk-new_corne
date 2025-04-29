@@ -179,10 +179,10 @@
         layer_3 {
             display-name = "Fn";
             bindings = <
-&none           &kp F1        &kp F2        &kp F3        &kp F4        &kp F5                                 &mmv MOVE_UP                     &kp F6      &kp F7           &kp F8          &kp F9        &kp F10          &kp F11
-&bt BT_CLR_ALL  &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4           &mmv MOVE_LEFT  &mkp LCLK       &mmv MOVE_RIGHT  &mkp LCLK   &mmv MOVE_LEFT   &mmv MOVE_DOWN  &mmv MOVE_UP  &mmv MOVE_RIGHT  &kp F12
-&out OUT_BLE    &out OUT_USB  &none         &none         &none         &none         &none                    &mmv MOVE_DOWN                   &bl BL_TOG  &rgb_ug RGB_TOG  &none           &none         &none            &tog 4
-                                            &trans        &trans        &trans                                                                  &mkp LCLK   &mkp RCLK        &trans
+&kp F1          &kp F2        &kp F3        &kp F4        &kp F5        &kp F6                                    &mmv MOVE_UP                     &kt F7     &kp F8          &kp F9          &kp F10       &kp F11          &kp F12
+&bt BT_CLR_ALL  &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &bt BT_SEL 3  &bt BT_SEL 4              &mmv MOVE_LEFT  &mkp LCLK       &mmv MOVE_RIGHT  &none      &mmv MOVE_LEFT  &mmv MOVE_DOWN  &mmv MOVE_UP  &mmv MOVE_RIGHT  &none
+&out OUT_BLE    &out OUT_USB  &bl BL_TOG    &none         &none         &rgb_ug RGB_TOG  &none                    &mmv MOVE_DOWN                   &none      &msc SCRL_LEFT  &msc SCRL_DOWN  &msc SCRL_UP  &msc SCRL_RIGHT  &tog 4
+                                            &trans        &trans        &trans                                                                     &mkp LCLK  &mkp RCLK       &trans
             >;
         };
 
