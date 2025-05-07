@@ -13,6 +13,10 @@
 
 &msc_input_listener { input-processors = <&zip_scroll_scaler 2 1>; };
 
+&mt {
+    tapping-term-ms = <300>; // This is the value already set by default
+};
+
 &msc {
     acceleration-exponent = <0>;      // 0
     time-to-max-speed-ms = <0>;       // 300
