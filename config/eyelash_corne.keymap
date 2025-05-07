@@ -14,7 +14,10 @@
 &msc_input_listener { input-processors = <&zip_scroll_scaler 2 1>; };
 
 &mt {
-    tapping-term-ms = <300>; // This is the value already set by default
+    tapping-term-ms = <280>; // This is the value already set by default
+    flavor = "balanced";
+    quick-tap-ms = <175>;
+    require-prior-idle-ms = <150>;
 };
 
 &msc {
