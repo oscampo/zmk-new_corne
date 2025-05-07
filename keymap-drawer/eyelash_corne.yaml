@@ -15,19 +15,19 @@ layers:
   - P
   - {t: '$$mdi:backspace$$', type: backspace}
   - $$mdi:keyboard-tab$$
-  - A
-  - S
-  - D
-  - F
+  - {t: A, h: LEFT WIN}
+  - {t: S, h: '$$mdi:apple-keyboard-option$$'}
+  - {t: D, h: '$$mdi:apple-keyboard-shift$$'}
+  - {t: F, h: '$$mdi:apple-keyboard-control$$'}
   - G
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - H
-  - J
-  - K
-  - L
-  - {t: '''', s: '"'}
+  - {t: J, h: '$$mdi:apple-keyboard-control$$'}
+  - {t: K, h: '$$mdi:apple-keyboard-shift$$'}
+  - {t: L, h: '$$mdi:apple-keyboard-option$$'}
+  - {t: '''', h: RIGHT WIN, s: '"'}
   - {t: Sft+', s: Sft+"}
   - {t: '$$mdi:apple-keyboard-caps$$', h: '$$mdi:apple-keyboard-shift$$'}
   - Z
@@ -252,5 +252,3 @@ combos:
   k: '&mil_gracias'
 - p: [38, 39]
   k: {t: ;, s: ':'}
-- p: [16, 17]
-  k: $$mdi:apple-keyboard-option$$
