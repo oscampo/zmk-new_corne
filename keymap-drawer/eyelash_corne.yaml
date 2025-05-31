@@ -77,7 +77,7 @@ layers:
   - '8'
   - '9'
   - '0'
-  - {t: \, s: '|'}
+  - {t: \, h: Sft+\, s: '|'}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: 'Sft+[', s: 'Sft+{'}
   - {t: '[', s: '{'}
@@ -88,10 +88,10 @@ layers:
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: 'Sft+]', s: 'Sft+}'}
   - {t: Sft+=, s: Sft++}
-  - {t: '-', s: _}
+  - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '=', s: +}
-  - {t: Sft+\, s: Sft+|}
+  - {t: '-', h: Sft+-, s: _}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
   - {t: '$$mdi:transfer$$', type: trans}
