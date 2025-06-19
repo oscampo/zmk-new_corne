@@ -126,6 +126,14 @@
 
             label = "CODE_BLOCK";
         };
+
+        alpha: alpha {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&macro_tap_time 1>, <&hold_tap 0 DELETE &kp Q>;
+
+            label = "ALPHA";
+        };
     };
 
     combos {
@@ -153,10 +161,10 @@
         default_layer {
             display-name = "QWERTY";
             bindings = <
-&kp ESCAPE               &kp Q               &kp W           &kp E               &kp R             &kp T                            &none         &kp Y        &kp U                   &kp I                &kp O            &kp P                           &kp BSPC
-&kp TAB                  &mt LEFT_COMMAND A  &mt LEFT_ALT S  &mt LEFT_CONTROL D  &mt LEFT_SHIFT F  &kp G                     &none  &none  &none  &kp H        &mt RIGHT_SHIFT J       &mt RIGHT_CONTROL K  &mt RIGHT_ALT L  &mt RIGHT_COMMAND SINGLE_QUOTE  &kp LS(SINGLE_QUOTE)
-&mt LEFT_SHIFT CAPSLOCK  &kp Z               &kp X           &kp C               &kp V             &kp B        &kp SPACE           &none         &kp N        &kp M                   &mt SEMICOLON COMMA  &td_mt           &kp FSLH                        &mt LEFT_ALT ENTER
-                                                             &kp LEFT_CONTROL    &lt 3 LEFT_ALT    &lt 2 ENTER                                    &lt 1 SPACE  &mt RIGHT_SHIFT DELETE  &kp RALT
+&kp ESCAPE               &kp Q               &kp W           &kp E               &kp R             &kp T                            &none         &kp Y        &kp U              &kp I                &kp O            &kp P                           &kp BSPC
+&kp TAB                  &mt LEFT_COMMAND A  &mt LEFT_ALT S  &mt LEFT_CONTROL D  &mt LEFT_SHIFT F  &kp G                     &none  &none  &none  &kp H        &mt RIGHT_SHIFT J  &mt RIGHT_CONTROL K  &mt RIGHT_ALT L  &mt RIGHT_COMMAND SINGLE_QUOTE  &kp LS(SINGLE_QUOTE)
+&mt LEFT_SHIFT CAPSLOCK  &kp Z               &kp X           &kp C               &kp V             &kp B        &kp SPACE           &none         &kp N        &kp M              &mt SEMICOLON COMMA  &td_mt           &kp FSLH                        &mt LEFT_ALT ENTER
+                                                             &kp LEFT_CONTROL    &lt 3 LEFT_ALT    &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE         &kp RALT
             >;
 
             // sensor-bindings = <&inc_dec_kp C_VOLUME_UP C_VOLUME_DOWN>;
@@ -198,6 +206,15 @@
 &trans  &trans  &trans  &trans            &trans  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
 &trans  &trans  &trans  &trans            &trans  &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
                         &kp LEFT_COMMAND  &trans  &trans                                    &trans  &trans  &trans
+            >;
+        };
+
+        layer_5 {
+            bindings = <
+&trans  &trans  &trans  &trans  &trans  &trans                    &trans          &trans  &trans  &trans  &trans  &trans  &trans
+&trans  &trans  &trans  &trans  &trans  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans  &trans  &trans  &trans  &trans  &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
+                        &trans  &trans  &trans                                    &trans  &trans  &trans
             >;
         };
     };
