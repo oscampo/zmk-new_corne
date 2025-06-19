@@ -127,12 +127,11 @@
             label = "CODE_BLOCK";
         };
 
-        alpha: alpha {
+        theta: theta {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
-            bindings = <&macro_tap_time 1>, <&hold_tap 0 DELETE &kp Q>;
-
-            label = "ALPHA";
+            bindings = <&macro_tap_time 1>;
+            label = "THETA";
         };
     };
 
@@ -152,6 +151,11 @@
         semi_colon {
             bindings = <&kp SEMI>;
             key-positions = <38 39>;
+        };
+
+        theta {
+            bindings = <&theta>;
+            key-positions = <46 1>;
         };
     };
 
