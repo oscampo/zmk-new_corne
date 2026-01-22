@@ -101,9 +101,9 @@ layers:
   SYMBOL:
   - {t: '$$mdi:transfer$$', type: trans}
   - PgUp
-  - HOME
+  - {t: HOME, h: Ctl+HOME}
   - $$mdi:arrow-up-bold$$
-  - END
+  - {t: END, h: Ctl+END}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - {t: '$$mdi:minus-circle-outline$$', type: none}
   - F6
