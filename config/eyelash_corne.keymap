@@ -3,9 +3,9 @@
 
 #include <input/processors.dtsi>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <behaviors.dtsi>
 #include <behaviors/unicode.dtsi>
 #include <zmk-unicode/keys-extra.h>  // All glyphs except CJK
+#include <behaviors.dtsi>
 #include <dt-bindings/zmk/bt.h>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/outputs.h>
@@ -144,6 +144,13 @@
 
             label = "THETA";
         };
+
+        To_Layer_5: To_Layer_5 {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&none &kp>;
+            label = "TO_LAYER_5";
+        };
     };
 
     combos {
@@ -179,7 +186,7 @@
 &kp ESCAPE               &kp Q               &kp W           &kp E               &kp R             &kp T                            &none         &kp Y        &kp U              &kp I                &kp O            &kp P                           &kp BSPC
 &kp TAB                  &mt LEFT_COMMAND A  &mt LEFT_ALT S  &mt LEFT_CONTROL D  &mt LEFT_SHIFT F  &kp G                     &none  &none  &none  &kp H        &mt RIGHT_SHIFT J  &mt RIGHT_CONTROL K  &mt RIGHT_ALT L  &mt RIGHT_COMMAND SINGLE_QUOTE  &kp LS(SINGLE_QUOTE)
 &mt LEFT_SHIFT CAPSLOCK  &kp Z               &kp X           &kp C               &kp V             &kp B        &kp SPACE           &none         &kp N        &kp M              &mt SEMICOLON COMMA  &td_mt           &kp FSLH                        &mt LEFT_ALT ENTER
-                                                             &kp LEFT_CONTROL    &lt 3 LEFT_ALT    &lt 2 ENTER                                    &lt 1 SPACE  &kp DELETE         &kp RALT
+                                                             &kp LEFT_CONTROL    &lt 3 LEFT_ALT    &lt 2 ENTER                                    &lt 1 SPACE  &lt 5 DEL          &kp RALT
             >;
 
             // sensor-bindings = <&inc_dec_kp C_VOLUME_UP C_VOLUME_DOWN>;
