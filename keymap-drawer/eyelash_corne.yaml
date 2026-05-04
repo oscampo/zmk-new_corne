@@ -303,3 +303,5 @@ combos:
   k: ':'
 - p: [46, 1]
   k: '&theta'
+- p: [47, 0]
+  k: {t: '$$mdi:minus-circle-outline$$', type: none}
