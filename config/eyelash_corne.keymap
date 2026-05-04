@@ -144,13 +144,6 @@
 
             label = "THETA";
         };
-
-        To_Layer_5: To_Layer_5 {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            bindings = <&none &kp>;
-            label = "TO_LAYER_5";
-        };
     };
 
     combos {
