@@ -142,6 +142,13 @@
 
             label = "THETA";
         };
+
+        Light_Down_Right: Light_Down_Right {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&none>;
+            label = "LIGHT_DOWN_RIGHT";
+        };
     };
 
     combos {
@@ -165,6 +172,11 @@
         theta {
             bindings = <&theta>;
             key-positions = <46 1>;
+        };
+
+        BoxLDR {
+            bindings = <&none>;
+            key-positions = <47 0>;
         };
     };
 
