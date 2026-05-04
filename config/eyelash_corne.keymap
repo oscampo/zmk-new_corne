@@ -231,12 +231,16 @@
             >;
         };
 
-        layer_5 {
+       layer_5 {
+            display-name = "BOX DRAW";
             bindings = <
-&trans  &trans  &trans  &trans  &trans  &trans                    &trans          &trans  &trans  &trans  &trans  &trans  &trans
-&trans  &trans  &trans  &trans  &trans  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
-&trans  &trans  &trans  &trans  &trans  &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
-                        &trans  &trans  &trans                                    &trans  &trans  &trans
+//        Q (┌)         W (┬)         E (┐)         R (─)
+&trans    &uc 0x250C 0  &uc 0x252C 0  &uc 0x2510 0  &uc 0x2500 0  &trans                    &trans          &trans  &trans  &trans  &trans  &trans  &trans
+//        A (├)         S (┼)         D (┤)         F (│)
+&trans    &uc 0x251C 0  &uc 0x253C 0  &uc 0x2524 0  &uc 0x2502 0  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+//        Z (└)         X (┴)         C (┘)         V (Vacío)
+&trans    &uc 0x2514 0  &uc 0x2534 0  &uc 0x2518 0  &trans        &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
+                                      &trans        &trans        &trans                                    &trans  &trans  &trans
             >;
         };
     };
