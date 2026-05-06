@@ -189,7 +189,7 @@
             display-name = "NUMBER";
             bindings = <
 &bhv_code_block 0 GRAVE  &kp LS(NUMBER_1)      &kp LS(NUMBER_2)  &kp LS(NUMBER_3)  &kp LS(NUMBER_4)  &kp LS(NUMBER_5)                   &none         &kp LS(NUMBER_6)       &kp LS(NUMBER_7)     &kp LS(NUMBER_8)  &kp LS(NUMBER_9)  &kp LS(NUMBER_0)  &kp BSPC
-&kp LS(GRAVE)            &kp NUMBER_1          &kp NUMBER_2      &kp NUMBER_3      &kp NUMBER_4      &kp NUMBER_5                &none  &none  &none  &kp NUMBER_6           &kp NUMBER_7         &kp NUMBER_8      &kp NUMBER_9      &kp NUMBER_0      &mt LS(BACKSLASH) BACKSLASH
+&kp LS(GRAVE)            &kp KP_N1             &kp KP_N2         &kp KP_N3         &kp KP_N4         &kp KP_N5                   &none  &none  &none  &kp KP_N6              &kp KP_N7            &kp KP_N8         &kp KP_N9         &kp KP_N0         &mt LS(BACKSLASH) BACKSLASH
 &trans                   &kp LS(LEFT_BRACKET)  &kp LEFT_BRACKET  &kp LESS_THAN     &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp LS(RIGHT_BRACKET)  &mt MINUS LS(EQUAL)  &trans            &trans            &kp EQUAL         &mt LS(MINUS) MINUS
                                                                  &trans            &trans            &trans                                           &trans                 &trans               &trans
             >;
@@ -224,16 +224,13 @@
             >;
         };
 
-       layer_5 {
+        layer_5 {
             display-name = "BOX DRAW";
             bindings = <
-//        Q (┌)         W (┬)         E (┐)         R (─)
-&trans    &uc 0x250C 0  &uc 0x252C 0  &uc 0x2510 0  &uc 0x2500 0  &trans                    &trans          &trans  &trans  &trans  &trans  &trans  &trans
-//        A (├)         S (┼)         D (┤)         F (│)
-&trans    &uc 0x251C 0  &uc 0x253C 0  &uc 0x2524 0  &uc 0x2502 0  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
-//        Z (└)         X (┴)         C (┘)         V (Vacío)
-&trans    &uc 0x2514 0  &uc 0x2534 0  &uc 0x2518 0  &trans        &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
-                                      &trans        &trans        &trans                                    &trans  &trans  &trans
+&trans  &uc 0x250C 0  &uc 0x252C 0  &uc 0x2510 0  &uc 0x2500 0  &trans                    &trans          &trans  &trans  &trans  &trans  &trans  &trans
+&trans  &uc 0x251C 0  &uc 0x253C 0  &uc 0x2524 0  &uc 0x2502 0  &trans            &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans  &trans
+&trans  &uc 0x2514 0  &uc 0x2534 0  &uc 0x2518 0  &trans        &trans  &trans            &trans          &trans  &trans  &trans  &trans  &trans  &trans
+                                    &trans        &trans        &trans                                    &trans  &trans  &trans
             >;
         };
     };
