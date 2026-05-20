@@ -124,25 +124,9 @@
             #binding-cells = <0>;
             bindings =
                 <&macro_tap_time 1>,
-                <&kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp RET &kp RET &kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp UP_ARROW>;
+                <&kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp LS(ENTER) &kp LS(ENTER) &kp GRAVE &kp GRAVE &kp GRAVE &kp SPACE &kp UP_ARROW>;
 
             label = "CODE_BLOCK";
-        };
-
-        theta: theta {
-            compatible = "zmk,behavior-macro";
-            #binding-cells = <0>;
-            wait-ms = <40>;
-            tap-ms = <40>;
-            bindings =
-                <&macro_press>,
-                <&kp LEFT_ALT>,
-                <&macro_tap>,
-                <&kp KP_NUMBER_2 &kp KP_NUMBER_3 &kp KP_NUMBER_2>,
-                <&macro_release>,
-                <&kp LEFT_ALT>;
-
-            label = "THETA";
         };
     };
 
@@ -162,11 +146,6 @@
         semi_colon {
             bindings = <&kp COLON>;
             key-positions = <38 39>;
-        };
-
-        theta {
-            bindings = <&theta>;
-            key-positions = <46 1>;
         };
     };
 
