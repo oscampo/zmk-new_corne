@@ -301,5 +301,3 @@ combos:
   k: '&mil_gracias'
 - p: [38, 39]
   k: ':'
-- p: [46, 1]
-  k: '&theta'
