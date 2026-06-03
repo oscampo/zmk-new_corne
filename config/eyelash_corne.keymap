@@ -29,6 +29,7 @@
             compatible = "zmk,behavior-hold-tap";
             label = "MT_SHIFT";
             #binding-cells = <2>;
+            bindings = <&kp>, <&kp>;
             tapping-term-ms = <280>;
             flavor = "balanced";
             quick-tap-ms = <175>;
