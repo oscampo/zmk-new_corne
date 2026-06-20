@@ -9,36 +9,55 @@
 
 #define TEXT_MAX_LEN 64
 static char text_buf[TEXT_MAX_LEN + 1];
-static lv_obj_t *ble_label;
+
+/* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
 /*
- * The nice_view display is mounted sideways on the keyboard (landscape).
- * LVGL canvas is portrait (68 × 160 px); the display is NOT rotated in
- * firmware — pixels are sent directly.  This means:
+ * The nice_view display is physically landscape (160×68 px) but mounted
+ * sideways. The shield's widgets use a 68×68 lv_canvas + lv_canvas_transform
+ * at 900 (90°) to render glyphs upright. We replicate that approach here so
+ * our BLE text appears with the same orientation as the layer label.
  *
- *   LVGL left→right  =  physical bottom→top    (reads sideways)
- *   LVGL top→bottom  =  physical left→right     (reads normally ✓)
- *
- * To show readable text we put each character on its own line so the text
- * flows downward in LVGL, which appears left-to-right physically.
+ * LVGL canvas coords (before transform): 68 wide × 68 tall
+ *   After 90° CW transform the canvas occupies 68×68 on screen.
+ * We position the canvas to cover the WPM graph area.
  */
-static void refresh_ble_label(struct k_work *work) {
-    if (!ble_label) {
+#define CANVAS_SIZE 68
+
+static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
+static lv_obj_t  *ble_canvas;
+
+static void draw_ble_canvas(void) {
+    if (!ble_canvas) {
         return;
     }
-    /* Convert "Hello" → "H\ne\nl\nl\no" */
-    static char disp_buf[TEXT_MAX_LEN * 2 + 1];
-    int j = 0;
-    for (int i = 0; text_buf[i] && j < (int)sizeof(disp_buf) - 2; i++) {
-        disp_buf[j++] = text_buf[i];
-        if (text_buf[i + 1]) {
-            disp_buf[j++] = '\n';
-        }
-    }
-    disp_buf[j] = '\0';
-    lv_label_set_text(ble_label, disp_buf);
+
+    /* Clear to black */
+    lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
+
+    /* Draw text */
+    lv_draw_label_dsc_t dsc;
+    lv_draw_label_dsc_init(&dsc);
+    dsc.color = lv_color_white();
+
+    lv_canvas_draw_text(ble_canvas, 2, 2, CANVAS_SIZE - 4, &dsc, text_buf);
+
+    /* Rotate 90° CW — same as nice_view rotate_canvas() */
+    static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
+    memcpy(cbuf_tmp, ble_cbuf, sizeof(cbuf_tmp));
+    lv_img_dsc_t img;
+    img.data = (const uint8_t *)cbuf_tmp;
+    img.header.cf = LV_IMG_CF_TRUE_COLOR;
+    img.header.w  = CANVAS_SIZE;
+    img.header.h  = CANVAS_SIZE;
+    lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
+                        0, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
 }
-static K_WORK_DEFINE(refresh_work, refresh_ble_label);
+
+static void refresh_ble_canvas(struct k_work *work) {
+    draw_ble_canvas();
+}
+static K_WORK_DEFINE(refresh_work, refresh_ble_canvas);
 
 /* ── BLE GATT service ──────────────────────────────────────────────────────── */
 
@@ -67,36 +86,35 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
         BT_GATT_PERM_WRITE, NULL, on_ble_write, NULL),
 );
 
-/* ── Overlay label on the nice_view screen ────────────────────────────────── */
+/* ── Add canvas to the nice_view screen ───────────────────────────────────── */
 
-static void add_ble_label_fn(struct k_work *work);
-static K_WORK_DELAYABLE_DEFINE(add_ble_label_work, add_ble_label_fn);
+static void add_ble_canvas_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(add_ble_canvas_work, add_ble_canvas_fn);
 
-static void add_ble_label_fn(struct k_work *work) {
+static void add_ble_canvas_fn(struct k_work *work) {
     lv_obj_t *screen = lv_scr_act();
     if (!screen) {
-        k_work_schedule(&add_ble_label_work, K_MSEC(500));
+        k_work_schedule(&add_ble_canvas_work, K_MSEC(500));
         return;
     }
 
-    ble_label = lv_label_create(screen);
+    ble_canvas = lv_canvas_create(screen);
+    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
+                         LV_IMG_CF_TRUE_COLOR);
+
     /*
-     * In LVGL portrait (68 × 160): WPM area is roughly the center band.
-     * We size the label tall (LVGL y-direction = physical x / left-right)
-     * and thin (LVGL x-direction = physical y / up-down).
-     * Black background covers the WPM graph underneath.
+     * In LVGL portrait space (68 wide × 160 tall):
+     *   x=0 is display left edge, y=0 is top.
+     *   WPM graph occupies roughly y=60..128 (center band).
+     * Place the 68×68 canvas centered vertically in that band.
      */
-    lv_obj_set_size(ble_label, 20, 150);   /* thin × tall in LVGL space */
-    lv_obj_align(ble_label, LV_ALIGN_CENTER, 0, 0);
-    lv_label_set_long_mode(ble_label, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_bg_opa(ble_label, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(ble_label, lv_color_black(), 0);
-    lv_obj_set_style_text_color(ble_label, lv_color_white(), 0);
-    lv_label_set_text(ble_label, "");
+    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 20);
+
+    lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 }
 
 static int kbd_ble_display_init(void) {
-    k_work_schedule(&add_ble_label_work, K_MSEC(2000));
+    k_work_schedule(&add_ble_canvas_work, K_MSEC(2000));
     return 0;
 }
 SYS_INIT(kbd_ble_display_init, APPLICATION, 99);
