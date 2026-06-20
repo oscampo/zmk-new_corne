@@ -85,27 +85,29 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
 lv_obj_t *zmk_display_status_screen() {
     lv_obj_t *screen = lv_obj_create(NULL);
 
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_LAYER_STATUS)
-    zmk_widget_layer_status_init(&layer_widget, screen);
-    lv_obj_align(zmk_widget_layer_status_obj(&layer_widget), LV_ALIGN_BOTTOM_MID, 0, -2);
-#endif
-
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_OUTPUT_STATUS)
-    zmk_widget_output_status_init(&output_widget, screen);
-    lv_obj_align(zmk_widget_output_status_obj(&output_widget), LV_ALIGN_TOP_LEFT, 2, 2);
-#endif
-
 #if IS_ENABLED(CONFIG_ZMK_WIDGET_BATTERY_STATUS)
     zmk_widget_battery_status_init(&battery_widget, screen);
     lv_obj_align(zmk_widget_battery_status_obj(&battery_widget), LV_ALIGN_TOP_RIGHT, -2, 2);
 #endif
 
-    /* BLE text — occupies the large center area freed by removing the WPM graph */
+    /* BLE text — large center area (replaces WPM graph) */
     ble_label = lv_label_create(screen);
     lv_label_set_long_mode(ble_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(ble_label, 64);
     lv_label_set_text(ble_label, "");
-    lv_obj_align(ble_label, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align(ble_label, LV_ALIGN_CENTER, 0, -10);
+
+#if IS_ENABLED(CONFIG_ZMK_WIDGET_OUTPUT_STATUS)
+    /* BT profile circles — just above the layer name */
+    zmk_widget_output_status_init(&output_widget, screen);
+    lv_obj_align(zmk_widget_output_status_obj(&output_widget), LV_ALIGN_BOTTOM_MID, 0, -18);
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_WIDGET_LAYER_STATUS)
+    /* Layer name (QWERTY) — at the very bottom */
+    zmk_widget_layer_status_init(&layer_widget, screen);
+    lv_obj_align(zmk_widget_layer_status_obj(&layer_widget), LV_ALIGN_BOTTOM_MID, 0, -2);
+#endif
 
     return screen;
 }
