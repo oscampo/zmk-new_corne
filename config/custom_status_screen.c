@@ -9,11 +9,6 @@
 #include <zmk/display/widgets/output_status.h>
 #include <zmk/display/widgets/layer_status.h>
 
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-#include <zmk/display/widgets/wpm_status.h>
-static struct zmk_widget_wpm_status wpm_widget;
-#endif
-
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /* ── BLE display service ────────────────────────────────────────────────── */
@@ -96,12 +91,6 @@ lv_obj_t *zmk_display_status_screen() {
     zmk_widget_layer_status_init(&layer_widget, screen);
     lv_obj_align(zmk_widget_layer_status_obj(&layer_widget),
                  LV_ALIGN_CENTER, 0, -15);
-
-#if IS_ENABLED(CONFIG_ZMK_WPM)
-    zmk_widget_wpm_status_init(&wpm_widget, screen);
-    lv_obj_align(zmk_widget_wpm_status_obj(&wpm_widget),
-                 LV_ALIGN_CENTER, 0, 20);
-#endif
 
     display_label = lv_label_create(screen);
     lv_label_set_long_mode(display_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
