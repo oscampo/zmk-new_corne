@@ -2,15 +2,13 @@
 include:
   - board: eyelash_corne_left
     shield: nice_view
-#    #snippet: zmk-usb-logging    # Uncomment to log over USB.
+    cmake-args: -DCONFIG_KBD_BLE_DISPLAY=y -DCONFIG_NICE_VIEW_WIDGET_STATUS=n -DCONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y -DCONFIG_ZMK_WIDGET_BATTERY_STATUS=y -DCONFIG_ZMK_WIDGET_OUTPUT_STATUS=y -DCONFIG_ZMK_WIDGET_LAYER_STATUS=y
   - board: eyelash_corne_right
     shield: nice_view
-    #snippet: zmk-usb-logging
   - board: eyelash_corne_left
     shield: nice_view
     snippet: studio-rpc-usb-uart
-    cmake-args: -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n
+    cmake-args: -DCONFIG_KBD_BLE_DISPLAY=y -DCONFIG_NICE_VIEW_WIDGET_STATUS=n -DCONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y -DCONFIG_ZMK_WIDGET_BATTERY_STATUS=y -DCONFIG_ZMK_WIDGET_OUTPUT_STATUS=y -DCONFIG_ZMK_WIDGET_LAYER_STATUS=y -DCONFIG_ZMK_STUDIO=y -DCONFIG_ZMK_STUDIO_LOCKING=n
     artifact-name: eyelash_corne_studio_left
   - board: eyelash_corne_left
     shield: settings_reset
-    #snippet: zmk-usb-logging
