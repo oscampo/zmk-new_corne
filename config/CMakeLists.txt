@@ -1,1 +1,2 @@
-target_sources_ifdef(CONFIG_ZMK_DISPLAY app PRIVATE ${CMAKE_CURRENT_LIST_DIR}/ble_display_service.c)
+target_sources_ifdef(CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM app PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/custom_status_screen.c)
