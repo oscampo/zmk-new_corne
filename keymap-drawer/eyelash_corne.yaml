@@ -29,7 +29,7 @@ layers:
   - {t: L, h: '$$mdi:apple-keyboard-option$$'}
   - {t: '''', h: '$$mdi:apple-keyboard-command$$', s: '"'}
   - {t: Sft+', s: Sft+"}
-  - {t: '$$mdi:apple-keyboard-caps$$', h: '$$mdi:apple-keyboard-shift$$'}
+  - {t: '$$mdi:apple-keyboard-caps$$', h: 'Alt+Ctl+$$mdi:backspace-reverse-outline$$'}
   - Z
   - X
   - C
