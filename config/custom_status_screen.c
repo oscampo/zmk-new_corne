@@ -1,28 +1,11 @@
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
-#include <zephyr/logging/log.h>
+#include <zephyr/init.h>
 #include <lvgl.h>
 #include <string.h>
 
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_BATTERY_STATUS)
-#include <zmk/display/widgets/battery_status.h>
-static struct zmk_widget_battery_status battery_widget;
-#endif
-
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_OUTPUT_STATUS)
-#include <zmk/display/widgets/output_status.h>
-static struct zmk_widget_output_status output_widget;
-#endif
-
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_LAYER_STATUS)
-#include <zmk/display/widgets/layer_status.h>
-static struct zmk_widget_layer_status layer_widget;
-#endif
-
-LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
-
-/* ── BLE text ticker ───────────────────────────────────────────────────── */
+/* ── BLE text buffer ──────────────────────────────────────────────────────── */
 
 #define TEXT_MAX_LEN 64
 static char text_buf[TEXT_MAX_LEN + 1];
@@ -35,7 +18,7 @@ static void refresh_ble_label(struct k_work *work) {
 }
 static K_WORK_DEFINE(refresh_work, refresh_ble_label);
 
-/* ── BLE GATT service ──────────────────────────────────────────────────── */
+/* ── BLE GATT service ──────────────────────────────────────────────────────── */
 
 static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                             const void *buf, uint16_t len, uint16_t offset,
@@ -66,48 +49,37 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
         BT_GATT_PERM_WRITE, NULL, on_ble_write, NULL),
 );
 
-/* ── Status screen layout ──────────────────────────────────────────────── */
+/* ── Overlay label on the nice_view screen ────────────────────────────────── */
 /*
- * Display: 68 × 160 px (portrait, nice!view)
+ * We do NOT replace zmk_display_status_screen(). The nice_view shield owns
+ * that function and handles rotation, fonts, and layout correctly.
+ * We add a text label on top of the WPM graph area after display init.
  *
- *  ┌──────────┐  y=0
- *  │  QWERTY  │  layer name + circles  (~56 px)
- *  │  ○ ① ② │
- *  ├──────────┤  y=56
- *  │          │  BLE text area  (~88 px)
- *  │ text...  │  (scrolling, where the WPM graph used to be)
- *  │          │
- *  ├──────────┤  y=144
- *  │ BT  BAT  │  output + battery icons  (~16 px)
- *  └──────────┘  y=160
+ * nice_view: 68 x 160 px portrait. WPM graph is at the bottom ~60 px.
  */
 
-lv_obj_t *zmk_display_status_screen() {
-    lv_obj_t *screen = lv_obj_create(NULL);
+static void add_ble_label_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(add_ble_label_work, add_ble_label_fn);
 
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_BATTERY_STATUS)
-    zmk_widget_battery_status_init(&battery_widget, screen);
-    lv_obj_align(zmk_widget_battery_status_obj(&battery_widget), LV_ALIGN_TOP_RIGHT, -2, 2);
-#endif
+static void add_ble_label_fn(struct k_work *work) {
+    lv_obj_t *screen = lv_scr_act();
+    if (!screen) {
+        k_work_schedule(&add_ble_label_work, K_MSEC(500));
+        return;
+    }
 
-    /* BLE text — large center area (replaces WPM graph) */
     ble_label = lv_label_create(screen);
     lv_label_set_long_mode(ble_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(ble_label, 64);
+    lv_obj_align(ble_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_style_bg_opa(ble_label, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(ble_label, lv_color_black(), 0);
+    lv_obj_set_style_text_color(ble_label, lv_color_white(), 0);
     lv_label_set_text(ble_label, "");
-    lv_obj_align(ble_label, LV_ALIGN_CENTER, 0, -10);
-
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_OUTPUT_STATUS)
-    /* BT profile circles — just above the layer name */
-    zmk_widget_output_status_init(&output_widget, screen);
-    lv_obj_align(zmk_widget_output_status_obj(&output_widget), LV_ALIGN_BOTTOM_MID, 0, -18);
-#endif
-
-#if IS_ENABLED(CONFIG_ZMK_WIDGET_LAYER_STATUS)
-    /* Layer name (QWERTY) — at the very bottom */
-    zmk_widget_layer_status_init(&layer_widget, screen);
-    lv_obj_align(zmk_widget_layer_status_obj(&layer_widget), LV_ALIGN_BOTTOM_MID, 0, -2);
-#endif
-
-    return screen;
 }
+
+static int kbd_ble_display_init(void) {
+    k_work_schedule(&add_ble_label_work, K_MSEC(2000));
+    return 0;
+}
+SYS_INIT(kbd_ble_display_init, APPLICATION, 99);
