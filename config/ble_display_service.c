@@ -12,25 +12,41 @@ LOG_MODULE_REGISTER(ble_display_svc, LOG_LEVEL_INF);
 static char text_buf[TEXT_MAX_LEN + 1];
 static lv_obj_t *ticker_label;
 
-/* Runs on system workqueue — safe for LVGL on cooperative nRF52 target */
 static void refresh_label_fn(struct k_work *work) {
     if (ticker_label) {
         lv_label_set_text(ticker_label, text_buf);
+        lv_obj_move_foreground(ticker_label);
     }
 }
 static K_WORK_DEFINE(refresh_work, refresh_label_fn);
 
-/* Add our ticker label to whatever screen is active after display settles */
+/*
+ * Retry every second until lv_scr_act() returns a non-NULL screen.
+ * Once the label is created, the timer stops.
+ */
+static void ticker_timer_fn(struct k_timer *t);
+static K_TIMER_DEFINE(ticker_timer, ticker_timer_fn, NULL);
+
 static void add_ticker_fn(struct k_work *work) {
+    if (ticker_label) {
+        return; /* already created */
+    }
     lv_obj_t *screen = lv_scr_act();
     if (!screen) {
-        return;
+        LOG_WRN("lv_scr_act() returned NULL, will retry");
+        return; /* timer will retry */
     }
+
     ticker_label = lv_label_create(screen);
     lv_label_set_long_mode(ticker_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_width(ticker_label, 64);
+    lv_obj_set_width(ticker_label, lv_obj_get_width(screen));
     lv_label_set_text(ticker_label, "");
-    lv_obj_align(ticker_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_align(ticker_label, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_move_foreground(ticker_label);
+
+    k_timer_stop(&ticker_timer); /* success — stop retrying */
+    LOG_INF("BLE ticker label created");
+
     if (text_buf[0]) {
         lv_label_set_text(ticker_label, text_buf);
     }
@@ -40,11 +56,10 @@ static K_WORK_DEFINE(add_ticker_work, add_ticker_fn);
 static void ticker_timer_fn(struct k_timer *t) {
     k_work_submit(&add_ticker_work);
 }
-static K_TIMER_DEFINE(ticker_timer, ticker_timer_fn, NULL);
 
 static int ble_display_init(void) {
-    /* Delay so ZMK's display thread has time to create the status screen */
-    k_timer_start(&ticker_timer, K_SECONDS(2), K_NO_WAIT);
+    /* Poll every second until the ZMK status screen is active */
+    k_timer_start(&ticker_timer, K_SECONDS(2), K_SECONDS(1));
     return 0;
 }
 SYS_INIT(ble_display_init, APPLICATION, 99);
