@@ -40,24 +40,42 @@ KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
 async def find_keyboard(timeout: float = 6.0):
-    """Scan for keyboards by name. Falls back to service UUID if needed."""
+    """Scan for keyboards by name or service UUID.
+
+    Important: if the keyboard is already connected to the OS as an HID device
+    it may not be advertising, so scanning can return nothing even though the
+    keyboard is reachable.  In that case use --address with the paired address.
+    """
     print(f"Buscando teclado ({timeout}s)...")
 
-    # First try: filter by our custom service UUID (only works if keyboard is advertising it)
-    devices = await BleakScanner.discover(
-        timeout=timeout,
-        service_uuids=[SERVICE_UUID],
-    )
+    # Scan all devices — ZMK does NOT include custom 128-bit UUIDs in its
+    # advertisement packet, so filtering by SERVICE_UUID never works here.
+    all_devices = await BleakScanner.discover(timeout=timeout)
 
-    if not devices:
-        # Second try: scan all and filter by name
-        all_devices = await BleakScanner.discover(timeout=timeout)
-        devices = [
-            d for d in all_devices
-            if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES)
-        ]
+    # Filter by name keywords
+    by_name = [
+        d for d in all_devices
+        if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES)
+    ]
+    if by_name:
+        return by_name
 
-    return devices
+    # On Windows the keyboard may already be paired/connected and therefore
+    # not advertising.  Try to enumerate paired BLE devices via the OS.
+    try:
+        import platform
+        if platform.system() == "Windows":
+            from bleak.backends.winrt.scanner import BleakScannerWinRT  # type: ignore
+            paired = await BleakScannerWinRT.find_device_by_filter(
+                lambda d, _: d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES),
+                timeout=2.0,
+            )
+            if paired:
+                return [paired]
+    except Exception:
+        pass
+
+    return []
 
 
 async def send_text(address: str, text: str) -> bool:
