@@ -11,10 +11,32 @@
 static char text_buf[TEXT_MAX_LEN + 1];
 static lv_obj_t *ble_label;
 
+/*
+ * The nice_view display is mounted sideways on the keyboard (landscape).
+ * LVGL canvas is portrait (68 × 160 px); the display is NOT rotated in
+ * firmware — pixels are sent directly.  This means:
+ *
+ *   LVGL left→right  =  physical bottom→top    (reads sideways)
+ *   LVGL top→bottom  =  physical left→right     (reads normally ✓)
+ *
+ * To show readable text we put each character on its own line so the text
+ * flows downward in LVGL, which appears left-to-right physically.
+ */
 static void refresh_ble_label(struct k_work *work) {
-    if (ble_label) {
-        lv_label_set_text(ble_label, text_buf);
+    if (!ble_label) {
+        return;
     }
+    /* Convert "Hello" → "H\ne\nl\nl\no" */
+    static char disp_buf[TEXT_MAX_LEN * 2 + 1];
+    int j = 0;
+    for (int i = 0; text_buf[i] && j < (int)sizeof(disp_buf) - 2; i++) {
+        disp_buf[j++] = text_buf[i];
+        if (text_buf[i + 1]) {
+            disp_buf[j++] = '\n';
+        }
+    }
+    disp_buf[j] = '\0';
+    lv_label_set_text(ble_label, disp_buf);
 }
 static K_WORK_DEFINE(refresh_work, refresh_ble_label);
 
@@ -33,10 +55,6 @@ static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *att
     return n;
 }
 
-/*
- * Service UUID:        00001523-1212-efde-1523-785feabcd123
- * Characteristic UUID: 00001524-1212-efde-1523-785feabcd123
- */
 #define KBD_DISPLAY_SVC_UUID \
     BT_UUID_DECLARE_128(BT_UUID_128_ENCODE(0x00001523, 0x1212, 0xefde, 0x1523, 0x785feabcd123ULL))
 #define KBD_DISPLAY_CHAR_UUID \
@@ -50,13 +68,6 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
 );
 
 /* ── Overlay label on the nice_view screen ────────────────────────────────── */
-/*
- * We do NOT replace zmk_display_status_screen(). The nice_view shield owns
- * that function and handles rotation, fonts, and layout correctly.
- * We add a text label on top of the WPM graph area after display init.
- *
- * nice_view: 68 x 160 px portrait. WPM graph is at the bottom ~60 px.
- */
 
 static void add_ble_label_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(add_ble_label_work, add_ble_label_fn);
@@ -69,9 +80,15 @@ static void add_ble_label_fn(struct k_work *work) {
     }
 
     ble_label = lv_label_create(screen);
-    lv_label_set_long_mode(ble_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
-    lv_obj_set_width(ble_label, 64);
-    lv_obj_align(ble_label, LV_ALIGN_BOTTOM_MID, 0, -2);
+    /*
+     * In LVGL portrait (68 × 160): WPM area is roughly the center band.
+     * We size the label tall (LVGL y-direction = physical x / left-right)
+     * and thin (LVGL x-direction = physical y / up-down).
+     * Black background covers the WPM graph underneath.
+     */
+    lv_obj_set_size(ble_label, 20, 150);   /* thin × tall in LVGL space */
+    lv_obj_align(ble_label, LV_ALIGN_CENTER, 0, 0);
+    lv_label_set_long_mode(ble_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_bg_opa(ble_label, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(ble_label, lv_color_black(), 0);
     lv_obj_set_style_text_color(ble_label, lv_color_white(), 0);
