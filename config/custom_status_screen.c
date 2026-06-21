@@ -50,10 +50,10 @@ static void draw_ble_canvas(void) {
     img.header.cf = LV_IMG_CF_TRUE_COLOR;
     img.header.w  = CANVAS_SIZE;
     img.header.h  = CANVAS_SIZE;
-    /* offset_x=-1 ensures destination pixels map to valid source coords after
-     * 90° rotation of a square canvas (same convention as nice_view util.c) */
+    /* offset_x=0 with text starting at y=2 keeps all source coords in-bounds.
+     * nice_view util.c uses -1 here but that shifts character columns off-canvas. */
     lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
-                        -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
+                        0, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -111,12 +111,14 @@ static void add_ble_canvas_fn(struct k_work *work) {
      * Place the 68×68 canvas centered vertically in that band.
      */
     /*
-     * WPM graph occupies roughly physical x=25..115 on the 160px-wide display.
-     * In LVGL portrait (68w×160h), physical x maps to LVGL y.
-     * Center of WPM area (physical x≈70) → LVGL y=70, offset from screen center
-     * (y=80) = -10.
+     * Photo analysis: with y_ofs=+20 the canvas appeared at physical x=26..89.
+     * The WPM graph appears at physical x≈17..90 in the photo.
+     * Measured offset: physical_x ≈ LVGL_y - 40.
+     * WPM center at physical x≈53 → LVGL y=93 → y_ofs = 93-80 = +13.
+     * Using y_ofs=+10 to cover the WPM area without spilling into status icons.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_move_foreground(ble_canvas);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 }
