@@ -50,8 +50,10 @@ static void draw_ble_canvas(void) {
     img.header.cf = LV_IMG_CF_TRUE_COLOR;
     img.header.w  = CANVAS_SIZE;
     img.header.h  = CANVAS_SIZE;
+    /* offset_x=-1 ensures destination pixels map to valid source coords after
+     * 90° rotation of a square canvas (same convention as nice_view util.c) */
     lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
-                        0, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
+                        -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -108,7 +110,13 @@ static void add_ble_canvas_fn(struct k_work *work) {
      *   WPM graph occupies roughly y=60..128 (center band).
      * Place the 68×68 canvas centered vertically in that band.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 20);
+    /*
+     * WPM graph occupies roughly physical x=25..115 on the 160px-wide display.
+     * In LVGL portrait (68w×160h), physical x maps to LVGL y.
+     * Center of WPM area (physical x≈70) → LVGL y=70, offset from screen center
+     * (y=80) = -10.
+     */
+    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, -10);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 }
