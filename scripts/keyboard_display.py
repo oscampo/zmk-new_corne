@@ -48,20 +48,20 @@ async def find_paired_windows(debug: bool = False):
     """
     import subprocess
 
-    # Use BluetoothLEDevice.GetDeviceSelectorFromPairingState(true) — this is the
-    # correct selector for paired BLE devices (HID keyboards included).
     ps = r"""
 $null = [Windows.Devices.Bluetooth.BluetoothLEDevice,Windows.Devices.Bluetooth,ContentType=WindowsRuntime]
 $null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
 try {
     $sel = [Windows.Devices.Bluetooth.BluetoothLEDevice]::GetDeviceSelectorFromPairingState($true)
+    Write-Output "SEL|$sel"
     $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)
     $devices = $op.AsTask().Result
+    Write-Output "COUNT|$($devices.Count)"
     foreach ($d in $devices) {
         Write-Output "DEVICE|$($d.Name)|$($d.Id)"
     }
 } catch {
-    Write-Error $_
+    Write-Output "ERROR|$_"
 }
 """
     try:
@@ -70,6 +70,8 @@ try {
             input=ps,
             capture_output=True, text=True, timeout=20,
         )
+        if debug:
+            print(f"[debug] PowerShell stdout:\n{r.stdout.strip()}")
         if r.stderr.strip():
             print(f"[debug] PowerShell stderr: {r.stderr.strip()[:400]}")
 
@@ -82,8 +84,6 @@ try {
                 continue
             _, name, dev_id = parts
             name, dev_id = name.strip(), dev_id.strip()
-            if debug:
-                print(f"[debug] BLE paired: {name!r}")
             if name and any(k in name.lower() for k in KEYBOARD_NAMES):
                 results.append((name, dev_id))
         return results
