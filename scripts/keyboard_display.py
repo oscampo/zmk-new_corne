@@ -23,11 +23,21 @@ Usage examples:
 
     # Pipe from any command
     curl -s 'https://api.example.com/score' | python keyboard_display.py --watch
+
+    # Pomodoro timer (preset)
+    python keyboard_display.py --pomodoro classic   # (25,5)x4 + 15 min long break
+    python keyboard_display.py --pomodoro short     # (15,3)x4 + 10 min long break
+    python keyboard_display.py --pomodoro long      # (50,10)x3 + 20 min long break
+
+    # Pomodoro timer (custom: work,break,cycles[,long_break])
+    python keyboard_display.py --pomodoro 25,5,4,15
+    python keyboard_display.py --pomodoro 30,10,3
 """
 
 import asyncio
 import argparse
 import sys
+import time
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
@@ -37,6 +47,90 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 
 # Keywords used to identify the keyboard in BLE scan results
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
+
+# Pomodoro presets: (work_min, break_min, cycles, long_break_min)
+POMODORO_PRESETS = {
+    "classic": (25,  5, 4, 15),
+    "short":   (15,  3, 4, 10),
+    "long":    (50, 10, 3, 20),
+}
+
+
+def parse_pomodoro(value: str) -> tuple[int, int, int, int]:
+    """
+    Parse --pomodoro value.  Accepts:
+      classic / short / long          → preset
+      work,break,cycles               → custom, no long break
+      work,break,cycles,long_break    → custom with long break
+    Returns (work_min, break_min, cycles, long_break_min).
+    """
+    v = value.strip().lower()
+    if v in POMODORO_PRESETS:
+        return POMODORO_PRESETS[v]
+    parts = v.split(",")
+    if len(parts) not in (3, 4):
+        raise argparse.ArgumentTypeError(
+            f"Formato inválido: {value!r}\n"
+            "Usa un preset (classic/short/long) o work,break,cycles[,long_break]"
+        )
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Los valores deben ser enteros: {value!r}")
+    if len(nums) == 3:
+        nums.append(0)  # no long break
+    return tuple(nums)
+
+
+def _fmt_time(seconds: int) -> str:
+    m, s = divmod(seconds, 60)
+    return f"{m:02d}:{s:02d}"
+
+
+async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
+                       long_brk: int, paired_windows: bool, debug: bool) -> None:
+    """Run a full pomodoro session, updating the keyboard display each second."""
+
+    async def show(msg: str) -> None:
+        await send_text(address, msg, paired_windows=paired_windows, debug=False)
+
+    async def countdown(label: str, minutes: int, cycle_info: str) -> None:
+        total = minutes * 60
+        for remaining in range(total, -1, -1):
+            line = f"{label} {_fmt_time(remaining)}  {cycle_info}"
+            await show(line)
+            print(f"\r  {line}   ", end="", flush=True)
+            if remaining:
+                await asyncio.sleep(1)
+        print()
+
+    print(f"\nPomodoro: {work}min trabajo / {brk}min descanso / {cycles} ciclos"
+          + (f" / {long_brk}min pausa larga" if long_brk else ""))
+    print("Ctrl-C para cancelar.\n")
+
+    try:
+        for cycle in range(1, cycles + 1):
+            info = f"{cycle}/{cycles}"
+
+            # Work
+            print(f"[Ciclo {info}] TRABAJO")
+            await countdown("TRABAJO", work, info)
+
+            # Short break (skip after last cycle if long break follows)
+            is_last = cycle == cycles
+            if is_last and long_brk:
+                print(f"[Ciclo {info}] PAUSA LARGA")
+                await countdown("PAUSA", long_brk, info)
+            else:
+                print(f"[Ciclo {info}] DESCANSO")
+                await countdown("DESCANSO", brk, info)
+
+        await show("FIN Pomodoro!")
+        print("\n✓ Sesión completada.")
+
+    except KeyboardInterrupt:
+        await show("")
+        print("\nPomodoro cancelado.")
 
 
 def _mac_to_int(mac: str) -> int:
@@ -96,8 +190,6 @@ async def send_text_winrt(mac: str, text: str, debug: bool = False) -> bool:
     """
     Send text directly via WinRT GATT — used on Windows when the keyboard is
     already connected as HID and BleakClient can't scan-and-connect to it.
-    BluetoothLEDevice.from_bluetooth_address_async() works for paired devices
-    even without active advertising.
     """
     try:
         from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
@@ -117,37 +209,32 @@ async def send_text_winrt(mac: str, text: str, debug: bool = False) -> bool:
         if debug:
             print(f"[debug] WinRT device: {dev.name}  id={dev.device_id}")
 
-        # Get our custom GATT service
         svc_uuid = _uuid.UUID(SERVICE_UUID)
         svc_result = await dev.get_gatt_services_for_uuid_async(svc_uuid)
         if svc_result.status != GattCommunicationStatus.SUCCESS or not svc_result.services:
             print(f"BLE error: custom GATT service not found (status={svc_result.status})")
             return False
 
-        service = svc_result.services[0]
-
-        # Get our characteristic
         char_uuid = _uuid.UUID(CHAR_UUID)
-        char_result = await service.get_characteristics_for_uuid_async(char_uuid)
+        char_result = await svc_result.services[0].get_characteristics_for_uuid_async(char_uuid)
         if char_result.status != GattCommunicationStatus.SUCCESS or not char_result.characteristics:
             print(f"BLE error: characteristic not found (status={char_result.status})")
             return False
 
-        characteristic = char_result.characteristics[0]
-
-        # Write the text
         data = text.encode("utf-8")[:64]
         writer = DataWriter()
-        writer.write_bytes(data)  # winrt DataWriter expects bytes, not list
+        writer.write_bytes(data)
         buf = writer.detach_buffer()
 
-        status = await characteristic.write_value_with_result_async(buf)
+        status = await char_result.characteristics[0].write_value_with_result_async(buf)
         if status.status == GattCommunicationStatus.SUCCESS:
-            display = text if len(text) <= 40 else text[:37] + "..."
-            print(f"✓ Enviado: {display!r}")
+            if debug:
+                display = text if len(text) <= 40 else text[:37] + "..."
+                print(f"[debug] ✓ Enviado: {display!r}")
             return True
         else:
-            print(f"BLE error: write failed (status={status.status})")
+            if debug:
+                print(f"[debug] BLE write failed (status={status.status})")
             return False
 
     except Exception as e:
@@ -190,8 +277,6 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
 async def send_text(address: str, text: str, paired_windows: bool = False,
                     debug: bool = False) -> bool:
     """Connect to the keyboard and write text to the display characteristic."""
-    # For Windows paired devices, use WinRT directly (BleakClient can't connect
-    # to already-connected HID devices that aren't advertising)
     if paired_windows:
         return await send_text_winrt(address, text, debug=debug)
 
@@ -241,6 +326,14 @@ async def main():
         "--debug", action="store_true",
         help="Mostrar información de depuración BLE.",
     )
+    parser.add_argument(
+        "--pomodoro", metavar="PRESET_O_CONFIG",
+        help=(
+            "Iniciar temporizador pomodoro. "
+            "Presets: classic (25,5,4,15) | short (15,3,4,10) | long (50,10,3,20). "
+            "Custom: trabajo,descanso,ciclos[,pausa_larga]  ej: 25,5,4,15"
+        ),
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
@@ -275,8 +368,17 @@ async def main():
     if args.scan:
         return
 
-    # ── Send ──────────────────────────────────────────────────────────────────
-    if args.clear:
+    # ── Dispatch ──────────────────────────────────────────────────────────────
+    if args.pomodoro is not None:
+        try:
+            work, brk, cycles, long_brk = parse_pomodoro(args.pomodoro)
+        except argparse.ArgumentTypeError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        await run_pomodoro(address, work, brk, cycles, long_brk,
+                           paired_windows, args.debug)
+
+    elif args.clear:
         await send_text(address, "", paired_windows=paired_windows, debug=args.debug)
 
     elif args.watch:
