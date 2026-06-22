@@ -115,14 +115,16 @@ static void add_ble_canvas_fn(struct k_work *work) {
                          LV_IMG_CF_TRUE_COLOR);
 
     /*
-     * x_ofs=+21 shifts the canvas 21px to the right in LVGL space. Since
-     * high LVGL x = physical TOP of the portrait display, this pushes the
-     * battery portion of our canvas (pre-rotation y=0..20 → post-rotation
-     * canvas x=47..67) off the top edge of the physical display, leaving
-     * only the WPM area (pre-rotation y=21..62 → canvas x=5..46) visible.
-     * The nice_view top canvas underneath remains visible for battery/USB.
+     * x_ofs=-21 shifts the canvas 21px LEFT in LVGL x. Since high LVGL x =
+     * physical TOP, this moves the canvas DOWN on the physical display:
+     *   canvas right edge  → LVGL x=138 → physical y=21 (top of WPM area)
+     *   canvas left edge   → LVGL x=71  → physical y=88 (into BT circles)
+     * Battery area (physical y=0..20 = LVGL x=139..159) is NOT covered,
+     * so battery/USB icons remain visible from the nice_view canvas below.
+     * The canvas extends ~20px into the BT circles area but that background
+     * is dark so the overlap is not noticeable.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 21, 0);
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, -21, 0);
 
     /* Initial draw: black rectangle + any text already in buffer */
     draw_ble_canvas();
