@@ -13,28 +13,30 @@ static char text_buf[TEXT_MAX_LEN + 1];
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
 /*
- * ZMK nice_view coordinate system (from status.c source):
- *   - LVGL display: 160×68 landscape
- *   - Status widget container: lv_obj_set_size(widget->obj, 160, 68)
- *   - "top" canvas: lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0)
- *     → sits at LVGL x=92..159, y=0..67
- *   - Physical display: high LVGL x = physical LEFT (due to driver rotation)
+ * Coordinate mapping (LVGL 160×68 landscape → physical 68×160 portrait):
+ *   physical_x = LVGL_y          (0..67)
+ *   physical_y = 159 - LVGL_x   (0..159, 0=top near USB port)
  *
- * Our overlay mirrors the top canvas exactly:
- *   - Same size (CANVAS_SIZE × CANVAS_SIZE = 68×68)
- *   - Same position (LV_ALIGN_TOP_RIGHT, 0, 0)
- *   - Same rotation parameters as nice_view's rotate_canvas()
+ * WPM area in physical space: y=21..62, x=0..67 (from nice_view source).
+ * In LVGL: x=97..138 (42px), y=0..67 (68px).
  *
- * Z-order: lv_obj_move_foreground is called every draw cycle because
- * nice_view refreshes its own canvases periodically (WPM updates etc.),
- * and objects created after ours would otherwise appear on top.
+ * We use a 68(LVGL_w) × 42(LVGL_h) non-square canvas and rotate the
+ * OBJECT 90° CW via lv_obj_set_style_transform_angle. This avoids the
+ * square-only constraint of lv_canvas_transform.
  *
- * Trade-off: covers battery/USB area (pre-rotation y=0..20). BT circles
- * and layer name are in separate canvases and remain fully visible.
+ * After 90° CW object rotation around pivot (34, 21):
+ *   canvas (x, y) → visual LVGL (118 - y, x)   (approx)
+ *   canvas x=0..67  → physical x=0..67           (left-right ✓)
+ *   canvas y=0..41  → physical y=20..61           (top-bottom ✓)
+ *
+ * Logical object position (84, 13) chosen so visual lands on WPM area.
+ * Text drawn normally (left→right, top→bottom) in the 68×42 buffer —
+ * no pixel-level rotation needed; the object transform handles it.
  */
-#define CANVAS_SIZE 68
+#define CANVAS_W 68
+#define CANVAS_H 42
 
-static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
+static lv_color_t ble_cbuf[CANVAS_W * CANVAS_H];
 static lv_obj_t  *ble_canvas;
 
 static void draw_ble_canvas(void) {
@@ -42,7 +44,6 @@ static void draw_ble_canvas(void) {
         return;
     }
 
-    /* Stay on top of nice_view canvases which refresh independently */
     lv_obj_move_foreground(ble_canvas);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
@@ -51,19 +52,7 @@ static void draw_ble_canvas(void) {
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    /* Draw at pre-rotation y=21: top edge of WPM box (battery is y=0..20) */
-    lv_canvas_draw_text(ble_canvas, 0, 21, CANVAS_SIZE, &dsc, text_buf);
-
-    /* Rotate 90° CW — identical parameters to nice_view's rotate_canvas() */
-    static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
-    memcpy(cbuf_tmp, ble_cbuf, sizeof(cbuf_tmp));
-    lv_img_dsc_t img;
-    img.data       = (const uint8_t *)cbuf_tmp;
-    img.header.cf  = LV_IMG_CF_TRUE_COLOR;
-    img.header.w   = CANVAS_SIZE;
-    img.header.h   = CANVAS_SIZE;
-    lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
-                        -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
+    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_W, &dsc, text_buf);
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -111,27 +100,25 @@ static void add_ble_canvas_fn(struct k_work *work) {
     }
 
     ble_canvas = lv_canvas_create(screen);
-    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
+    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_W, CANVAS_H,
                          LV_IMG_CF_TRUE_COLOR);
 
     /*
-     * x_ofs=-21 shifts the canvas 21px LEFT in LVGL x. Since high LVGL x =
-     * physical TOP, this moves the canvas DOWN on the physical display:
-     *   canvas right edge  → LVGL x=138 → physical y=21 (top of WPM area)
-     *   canvas left edge   → LVGL x=71  → physical y=88 (into BT circles)
-     * Battery area (physical y=0..20 = LVGL x=139..159) is NOT covered,
-     * so battery/USB icons remain visible from the nice_view canvas below.
-     * The canvas extends ~20px into the BT circles area but that background
-     * is dark so the overlap is not noticeable.
+     * Rotate the canvas OBJECT 90° CW. Combined with the display driver's
+     * 90° CCW rotation, the net result is 0° — text appears upright on the
+     * physical portrait display without any pixel-level canvas transform.
+     * Pivot at canvas center (CANVAS_W/2, CANVAS_H/2) = (34, 21).
+     * Logical position (84, 13) places the visual result over WPM area.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, -21, 0);
+    lv_obj_set_style_transform_angle(ble_canvas, 900, 0);
+    lv_obj_set_style_transform_pivot_x(ble_canvas, CANVAS_W / 2, 0);
+    lv_obj_set_style_transform_pivot_y(ble_canvas, CANVAS_H / 2, 0);
+    lv_obj_set_pos(ble_canvas, 84, 13);
 
-    /* Initial draw: black rectangle + any text already in buffer */
     draw_ble_canvas();
 }
 
 static int kbd_ble_display_init(void) {
-    /* 3s delay ensures nice_view has finished creating all its canvas objects */
     k_work_schedule(&add_ble_canvas_work, K_MSEC(3000));
     return 0;
 }
