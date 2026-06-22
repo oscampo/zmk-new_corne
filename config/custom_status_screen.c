@@ -51,7 +51,8 @@ static void draw_ble_canvas(void) {
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+    /* Draw at pre-rotation y=21: top edge of WPM box (battery is y=0..20) */
+    lv_canvas_draw_text(ble_canvas, 0, 21, CANVAS_SIZE, &dsc, text_buf);
 
     /* Rotate 90° CW — identical parameters to nice_view's rotate_canvas() */
     static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
@@ -114,12 +115,14 @@ static void add_ble_canvas_fn(struct k_work *work) {
                          LV_IMG_CF_TRUE_COLOR);
 
     /*
-     * Mirror the nice_view "top" canvas position exactly.
-     * This places our 68×68 canvas at LVGL x=92..159 in the 160×68 display,
-     * which is the physical LEFT side of the landscape display (battery+WPM area).
-     * draw_ble_canvas() calls lv_obj_move_foreground every cycle to stay on top.
+     * x_ofs=+21 shifts the canvas 21px to the right in LVGL space. Since
+     * high LVGL x = physical TOP of the portrait display, this pushes the
+     * battery portion of our canvas (pre-rotation y=0..20 → post-rotation
+     * canvas x=47..67) off the top edge of the physical display, leaving
+     * only the WPM area (pre-rotation y=21..62 → canvas x=5..46) visible.
+     * The nice_view top canvas underneath remains visible for battery/USB.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 0);
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 21, 0);
 
     /* Initial draw: black rectangle + any text already in buffer */
     draw_ble_canvas();
