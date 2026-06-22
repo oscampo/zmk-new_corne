@@ -40,29 +40,7 @@ KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
 def _mac_to_int(mac: str) -> int:
-    """Convert 'AA:BB:CC:DD:EE:FF' to uint64 as Windows BLE stack expects."""
     return int(mac.replace(":", ""), 16)
-
-
-async def _get_windows_device_id(mac: str, debug: bool = False) -> str | None:
-    """
-    Use winrt (already installed by bleak) to resolve a paired BLE device's
-    Windows device ID from its MAC address.  BleakClient on Windows needs the
-    device ID (BluetoothLE#BluetoothLE...) for paired devices that are not
-    currently advertising.
-    """
-    try:
-        from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
-        addr = _mac_to_int(mac)
-        dev = await BluetoothLEDevice.from_bluetooth_address_async(addr)
-        if dev and dev.device_id:
-            if debug:
-                print(f"[debug] Windows device ID: {dev.device_id}")
-            return dev.device_id
-    except Exception as e:
-        if debug:
-            print(f"[debug] BluetoothLEDevice lookup failed: {e}")
-    return None
 
 
 def _run_ps(script: str, debug: bool = False):
@@ -80,9 +58,8 @@ def _run_ps(script: str, debug: bool = False):
         )
     finally:
         os.unlink(ps_file)
-    if r.stderr.strip():
-        if debug:
-            print(f"[debug] PowerShell stderr: {r.stderr.strip()[:300]}")
+    if r.stderr.strip() and debug:
+        print(f"[debug] PowerShell stderr: {r.stderr.strip()[:300]}")
     return r.stdout.strip().splitlines()
 
 
@@ -115,28 +92,68 @@ try {
     return results
 
 
-async def find_paired_windows(debug: bool = False):
+async def send_text_winrt(mac: str, text: str, debug: bool = False) -> bool:
     """
-    Find paired BLE keyboards on Windows (they don't advertise so BleakScanner
-    misses them).  Strategy:
-      1. Get-PnpDevice to find paired BLE devices and their MAC addresses.
-      2. For each matching keyboard MAC, call winrt BluetoothLEDevice to get
-         the Windows device ID that BleakClient needs for already-connected devices.
-    Returns list of (name, address) where address is the Windows device ID or MAC.
+    Send text directly via WinRT GATT — used on Windows when the keyboard is
+    already connected as HID and BleakClient can't scan-and-connect to it.
+    BluetoothLEDevice.from_bluetooth_address_async() works for paired devices
+    even without active advertising.
     """
-    import platform
-    if platform.system() != "Windows":
-        return []
+    try:
+        from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
+        from winrt.windows.devices.bluetooth.genericattributeprofile import (  # type: ignore
+            GattCommunicationStatus,
+        )
+        from winrt.windows.storage.streams import DataWriter  # type: ignore
+        import uuid as _uuid
 
-    paired = _get_paired_macs_pnp(debug=debug)
-    results = []
-    for name, mac in paired:
-        if not any(k in name.lower() for k in KEYBOARD_NAMES):
-            continue
-        # Try to resolve to Windows device ID (needed for already-connected devices)
-        dev_id = await _get_windows_device_id(mac, debug=debug)
-        results.append((name, dev_id if dev_id else mac))
-    return results
+        addr = _mac_to_int(mac)
+        dev = await BluetoothLEDevice.from_bluetooth_address_async(addr)
+        if not dev:
+            if debug:
+                print("[debug] WinRT: from_bluetooth_address_async returned None")
+            return False
+
+        if debug:
+            print(f"[debug] WinRT device: {dev.name}  id={dev.device_id}")
+
+        # Get our custom GATT service
+        svc_uuid = _uuid.UUID(SERVICE_UUID)
+        svc_result = await dev.get_gatt_services_for_uuid_async(svc_uuid)
+        if svc_result.status != GattCommunicationStatus.SUCCESS or not svc_result.services:
+            print(f"BLE error: custom GATT service not found (status={svc_result.status})")
+            return False
+
+        service = svc_result.services[0]
+
+        # Get our characteristic
+        char_uuid = _uuid.UUID(CHAR_UUID)
+        char_result = await service.get_characteristics_for_uuid_async(char_uuid)
+        if char_result.status != GattCommunicationStatus.SUCCESS or not char_result.characteristics:
+            print(f"BLE error: characteristic not found (status={char_result.status})")
+            return False
+
+        characteristic = char_result.characteristics[0]
+
+        # Write the text
+        writer = DataWriter()
+        data = text.encode("utf-8")[:64]
+        writer.write_bytes(list(data))
+        buf = writer.detach_buffer()
+
+        status = await characteristic.write_value_with_result_async(buf)
+        if status.status == GattCommunicationStatus.SUCCESS:
+            display = text if len(text) <= 40 else text[:37] + "..."
+            print(f"✓ Enviado: {display!r}")
+            return True
+        else:
+            print(f"BLE error: write failed (status={status.status})")
+            return False
+
+    except Exception as e:
+        if debug:
+            print(f"[debug] WinRT send failed: {e}")
+        return False
 
 
 async def find_keyboard(timeout: float = 6.0, debug: bool = False):
@@ -157,33 +174,38 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     import platform
     if platform.system() == "Windows":
         print("Buscando dispositivos BLE emparejados (Windows)...")
-        paired = await find_paired_windows(debug=debug)
-        if paired:
+        paired = _get_paired_macs_pnp(debug=debug)
+        keyboards = [(n, m) for n, m in paired if any(k in n.lower() for k in KEYBOARD_NAMES)]
+        if keyboards:
             class _Dev:
-                def __init__(self, name, address):
+                def __init__(self, name, mac):
                     self.name = name
-                    self.address = address
-            return [_Dev(n, a) for n, a in paired]
+                    self.address = mac
+                    self._is_paired_windows = True
+            return [_Dev(n, m) for n, m in keyboards]
 
     return []
 
 
-async def send_text(address: str, text: str) -> bool:
+async def send_text(address: str, text: str, paired_windows: bool = False,
+                    debug: bool = False) -> bool:
     """Connect to the keyboard and write text to the display characteristic."""
+    # For Windows paired devices, use WinRT directly (BleakClient can't connect
+    # to already-connected HID devices that aren't advertising)
+    if paired_windows:
+        return await send_text_winrt(address, text, debug=debug)
+
     print(f"Conectando a {address}...")
     try:
         async with BleakClient(address, timeout=10.0) as client:
             if not client.is_connected:
                 print("Error: no se pudo conectar.")
                 return False
-
-            # Encode as UTF-8, max 64 bytes (matches TEXT_MAX_LEN in firmware)
             data = text.encode("utf-8")[:64]
             await client.write_gatt_char(CHAR_UUID, data, response=False)
             display = text if len(text) <= 40 else text[:37] + "..."
             print(f"✓ Enviado: {display!r}")
             return True
-
     except BleakError as e:
         print(f"BLE error: {e}")
         return False
@@ -223,6 +245,8 @@ async def main():
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
     address = args.address
+    paired_windows = False
+
     if not address:
         devices = await find_keyboard(debug=args.debug)
         if not devices:
@@ -238,6 +262,7 @@ async def main():
 
         if len(devices) == 1:
             address = devices[0].address
+            paired_windows = getattr(devices[0], "_is_paired_windows", False)
             print(f"Teclado encontrado: {devices[0].name} ({address})")
         else:
             print("Múltiples teclados encontrados:")
@@ -245,25 +270,28 @@ async def main():
                 print(f"  [{i}] {d.name} — {d.address}")
             idx = int(input("Selecciona [0]: ") or 0)
             address = devices[idx].address
+            paired_windows = getattr(devices[idx], "_is_paired_windows", False)
 
     if args.scan:
         return
 
     # ── Send ──────────────────────────────────────────────────────────────────
     if args.clear:
-        await send_text(address, "")
+        await send_text(address, "", paired_windows=paired_windows, debug=args.debug)
 
     elif args.watch:
         print("Modo watch activo. Envía líneas (Ctrl-C para salir)...")
         try:
             for line in sys.stdin:
                 text = line.rstrip("\n")
-                await send_text(address, text)
+                await send_text(address, text, paired_windows=paired_windows,
+                                debug=args.debug)
         except KeyboardInterrupt:
             print("\nSaliendo.")
 
     elif args.text is not None:
-        await send_text(address, args.text)
+        await send_text(address, args.text, paired_windows=paired_windows,
+                        debug=args.debug)
 
     else:
         parser.print_help()
