@@ -136,9 +136,9 @@ async def send_text_winrt(mac: str, text: str, debug: bool = False) -> bool:
         characteristic = char_result.characteristics[0]
 
         # Write the text
-        writer = DataWriter()
         data = text.encode("utf-8")[:64]
-        writer.write_bytes(list(data))
+        writer = DataWriter()
+        writer.write_bytes(data)  # winrt DataWriter expects bytes, not list
         buf = writer.detach_buffer()
 
         status = await characteristic.write_value_with_result_async(buf)
