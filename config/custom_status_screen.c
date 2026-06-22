@@ -13,14 +13,27 @@ static char text_buf[TEXT_MAX_LEN + 1];
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
 /*
- * The nice_view display is physically landscape (160×68 px) but mounted
- * sideways. The shield's widgets use a 68×68 lv_canvas + lv_canvas_transform
- * at 900 (90°) to render glyphs upright. We replicate that approach here so
- * our BLE text appears with the same orientation as the layer label.
+ * ZMK nice_view coordinate system (from status.c source):
+ *   - LVGL display: 160×68 landscape
+ *   - Status widget container: lv_obj_set_size(widget->obj, 160, 68)
+ *   - "top" canvas: lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0)
+ *     → sits at LVGL x=92..159, y=0..67
+ *   - WPM box inside top canvas (pre-rotation):
+ *       canvas_draw_rect(canvas, 0, 21, 68, 42, ...) → x=0..67, y=21..62
+ *   - rotate_canvas() uses:
+ *       lv_canvas_transform(canvas, &img, 900, LV_IMG_ZOOM_NONE,
+ *                           -1, 0, CANVAS_SIZE/2, CANVAS_SIZE/2, true)
  *
- * LVGL canvas coords (before transform): 68 wide × 68 tall
- *   After 90° CW transform the canvas occupies 68×68 on screen.
- * We position the canvas to cover the WPM graph area.
+ * Our overlay mirrors the top canvas exactly:
+ *   - Same size (CANVAS_SIZE × CANVAS_SIZE = 68×68)
+ *   - Same position (LV_ALIGN_TOP_RIGHT, 0, 0)
+ *   - Same rotation parameters
+ *   - Text drawn at pre-rotation y=21 (top of WPM box)
+ *
+ * Trade-off: the overlay covers the battery/USB area (pre-rotation y=0..20,
+ * which after rotation maps to LVGL x=139..159). BT circles and layer name
+ * remain visible (they are in the middle/bottom canvases at LVGL x=24..91
+ * and x=0..23 respectively).
  */
 #define CANVAS_SIZE 68
 
@@ -32,28 +45,25 @@ static void draw_ble_canvas(void) {
         return;
     }
 
-    /* Clear to black */
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 
-    /* Draw text */
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    lv_canvas_draw_text(ble_canvas, 2, 2, CANVAS_SIZE - 4, &dsc, text_buf);
+    /* Draw at pre-rotation y=21: top edge of the WPM box (height=42 available) */
+    lv_canvas_draw_text(ble_canvas, 0, 21, CANVAS_SIZE, &dsc, text_buf);
 
-    /* Rotate 90° CW — same as nice_view rotate_canvas() */
+    /* Rotate 90° CW — identical parameters to nice_view's rotate_canvas() */
     static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
     memcpy(cbuf_tmp, ble_cbuf, sizeof(cbuf_tmp));
     lv_img_dsc_t img;
-    img.data = (const uint8_t *)cbuf_tmp;
-    img.header.cf = LV_IMG_CF_TRUE_COLOR;
-    img.header.w  = CANVAS_SIZE;
-    img.header.h  = CANVAS_SIZE;
-    /* offset_x=0 with text starting at y=2 keeps all source coords in-bounds.
-     * nice_view util.c uses -1 here but that shifts character columns off-canvas. */
+    img.data       = (const uint8_t *)cbuf_tmp;
+    img.header.cf  = LV_IMG_CF_TRUE_COLOR;
+    img.header.w   = CANVAS_SIZE;
+    img.header.h   = CANVAS_SIZE;
     lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
-                        0, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
+                        -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -104,20 +114,8 @@ static void add_ble_canvas_fn(struct k_work *work) {
     lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
                          LV_IMG_CF_TRUE_COLOR);
 
-    /*
-     * In LVGL portrait space (68 wide × 160 tall):
-     *   x=0 is display left edge, y=0 is top.
-     *   WPM graph occupies roughly y=60..128 (center band).
-     * Place the 68×68 canvas centered vertically in that band.
-     */
-    /*
-     * Photo analysis: with y_ofs=+20 the canvas appeared at physical x=26..89.
-     * The WPM graph appears at physical x≈17..90 in the photo.
-     * Measured offset: physical_x ≈ LVGL_y - 40.
-     * WPM center at physical x≈53 → LVGL y=93 → y_ofs = 93-80 = +13.
-     * Using y_ofs=+10 to cover the WPM area without spilling into status icons.
-     */
-    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 10);
+    /* Same alignment as nice_view's "top" canvas in the 160×68 LVGL display */
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_obj_move_foreground(ble_canvas);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
