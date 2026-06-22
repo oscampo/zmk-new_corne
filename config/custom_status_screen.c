@@ -34,7 +34,7 @@ static char text_buf[TEXT_MAX_LEN + 1];
  */
 #define CANVAS_SIZE 68
 
-static lv_color_t ble_cbuf[CANVAS_SIZE * 50];
+static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
 static lv_obj_t  *ble_canvas;
 
 static void draw_ble_canvas(void) {
@@ -110,7 +110,7 @@ static void add_ble_canvas_fn(struct k_work *work) {
     }
 
     ble_canvas = lv_canvas_create(screen);
-    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, 50,
+    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
                          LV_IMG_CF_TRUE_COLOR);
 
     /*
@@ -119,7 +119,7 @@ static void add_ble_canvas_fn(struct k_work *work) {
      * which is the physical LEFT side of the landscape display (battery+WPM area).
      * draw_ble_canvas() calls lv_obj_move_foreground every cycle to stay on top.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 70, 0);
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     /* Initial draw: black rectangle + any text already in buffer */
     draw_ble_canvas();
