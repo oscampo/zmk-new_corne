@@ -1,0 +1,3 @@
+config KBD_BLE_DISPLAY
+	bool "Custom keyboard display with BLE text service"
+	default n
