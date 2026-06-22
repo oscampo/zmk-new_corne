@@ -13,38 +13,36 @@ static char text_buf[TEXT_MAX_LEN + 1];
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
 /*
- * Coordinate mapping (LVGL 160×68 landscape → physical 68×160 portrait):
- *   physical_x = LVGL_y          (0..67)
- *   physical_y = 159 - LVGL_x   (0..159, 0=top near USB port)
+ * Coordinate mapping (LVGL 160×68 → physical 68×160 portrait):
+ *   physical_x = LVGL_y         (0..67)
+ *   physical_y = 159 - LVGL_x  (0=top/USB, 159=bottom)
  *
- * WPM area in physical space: y=21..62, x=0..67 (from nice_view source).
- * In LVGL: x=97..138 (42px), y=0..67 (68px).
+ * WPM area: physical y=21..62 → LVGL x=97..138 (42px), y=0..67 (68px).
  *
- * We use a 68(LVGL_w) × 42(LVGL_h) non-square canvas and rotate the
- * OBJECT 90° CW via lv_obj_set_style_transform_angle. This avoids the
- * square-only constraint of lv_canvas_transform.
+ * Approach: 68×68 square canvas (lv_canvas_transform works on squares) placed
+ * inside a transparent 42×68 clip container that limits visibility to the WPM
+ * area only. The canvas is offset -26px horizontally inside the clip so the
+ * WPM portion of the rotated canvas aligns with the clip window.
  *
- * After 90° CW object rotation around pivot (34, 21):
- *   canvas (x, y) → visual LVGL (118 - y, x)   (approx)
- *   canvas x=0..67  → physical x=0..67           (left-right ✓)
- *   canvas y=0..41  → physical y=20..61           (top-bottom ✓)
- *
- * Logical object position (84, 13) chosen so visual lands on WPM area.
- * Text drawn normally (left→right, top→bottom) in the 68×42 buffer —
- * no pixel-level rotation needed; the object transform handles it.
+ * Clip container: LVGL x=97..138, y=0..67 → physical y=21..62, x=0..67 ✓
+ * Canvas inside clip: position (-26, 0) → absolute LVGL x=71..138
+ *   canvas_x=26..67 (the part inside the clip) → after CW90 → pre_y=0..41
+ *   canvas_x=0..25  (the BT circles portion)   → clipped away ✓
+ * Battery area (LVGL x=139..159): not covered → visible from nice_view ✓
  */
-#define CANVAS_W 68
-#define CANVAS_H 42
+#define CANVAS_SIZE 68
 
-static lv_color_t ble_cbuf[CANVAS_W * CANVAS_H];
+static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
+static lv_obj_t  *ble_clip;
 static lv_obj_t  *ble_canvas;
 
 static void draw_ble_canvas(void) {
-    if (!ble_canvas) {
+    if (!ble_canvas || !ble_clip) {
         return;
     }
 
-    lv_obj_move_foreground(ble_canvas);
+    /* Stay on top of nice_view canvases */
+    lv_obj_move_foreground(ble_clip);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 
@@ -52,7 +50,19 @@ static void draw_ble_canvas(void) {
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_W, &dsc, text_buf);
+    /* pre_y=0: maps to canvas_x=67 → physical y=21 (top of WPM area) */
+    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+
+    /* Rotate 90° CW — same as nice_view's rotate_canvas() */
+    static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
+    memcpy(cbuf_tmp, ble_cbuf, sizeof(cbuf_tmp));
+    lv_img_dsc_t img;
+    img.data       = (const uint8_t *)cbuf_tmp;
+    img.header.cf  = LV_IMG_CF_TRUE_COLOR;
+    img.header.w   = CANVAS_SIZE;
+    img.header.h   = CANVAS_SIZE;
+    lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
+                        -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -99,21 +109,26 @@ static void add_ble_canvas_fn(struct k_work *work) {
         return;
     }
 
-    ble_canvas = lv_canvas_create(screen);
-    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_W, CANVAS_H,
-                         LV_IMG_CF_TRUE_COLOR);
-
     /*
-     * Rotate the canvas OBJECT 90° CW. Combined with the display driver's
-     * 90° CCW rotation, the net result is 0° — text appears upright on the
-     * physical portrait display without any pixel-level canvas transform.
-     * Pivot at canvas center (CANVAS_W/2, CANVAS_H/2) = (34, 21).
-     * Logical position (84, 13) places the visual result over WPM area.
+     * Transparent clip container sized to the WPM area.
+     * LVGL children are clipped to the parent's content area by default,
+     * so the canvas (positioned -26px inside) only shows its WPM portion.
      */
-    lv_obj_set_style_transform_angle(ble_canvas, 900, 0);
-    lv_obj_set_style_transform_pivot_x(ble_canvas, CANVAS_W / 2, 0);
-    lv_obj_set_style_transform_pivot_y(ble_canvas, CANVAS_H / 2, 0);
-    lv_obj_set_pos(ble_canvas, 84, 13);
+    ble_clip = lv_obj_create(screen);
+    lv_obj_set_pos(ble_clip, 97, 0);
+    lv_obj_set_size(ble_clip, 42, 68);
+    lv_obj_set_style_bg_opa(ble_clip, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ble_clip, 0, 0);
+    lv_obj_set_style_pad_all(ble_clip, 0, 0);
+    lv_obj_set_style_radius(ble_clip, 0, 0);
+    lv_obj_set_scrollbar_mode(ble_clip, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(ble_clip, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+    /* Canvas as child of clip; offset -26 so its WPM portion fills the clip */
+    ble_canvas = lv_canvas_create(ble_clip);
+    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
+                         LV_IMG_CF_TRUE_COLOR);
+    lv_obj_set_pos(ble_canvas, -26, 0);
 
     draw_ble_canvas();
 }
