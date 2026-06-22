@@ -18,22 +18,19 @@ static char text_buf[TEXT_MAX_LEN + 1];
  *   - Status widget container: lv_obj_set_size(widget->obj, 160, 68)
  *   - "top" canvas: lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0)
  *     → sits at LVGL x=92..159, y=0..67
- *   - WPM box inside top canvas (pre-rotation):
- *       canvas_draw_rect(canvas, 0, 21, 68, 42, ...) → x=0..67, y=21..62
- *   - rotate_canvas() uses:
- *       lv_canvas_transform(canvas, &img, 900, LV_IMG_ZOOM_NONE,
- *                           -1, 0, CANVAS_SIZE/2, CANVAS_SIZE/2, true)
+ *   - Physical display: high LVGL x = physical LEFT (due to driver rotation)
  *
  * Our overlay mirrors the top canvas exactly:
  *   - Same size (CANVAS_SIZE × CANVAS_SIZE = 68×68)
  *   - Same position (LV_ALIGN_TOP_RIGHT, 0, 0)
- *   - Same rotation parameters
- *   - Text drawn at pre-rotation y=21 (top of WPM box)
+ *   - Same rotation parameters as nice_view's rotate_canvas()
  *
- * Trade-off: the overlay covers the battery/USB area (pre-rotation y=0..20,
- * which after rotation maps to LVGL x=139..159). BT circles and layer name
- * remain visible (they are in the middle/bottom canvases at LVGL x=24..91
- * and x=0..23 respectively).
+ * Z-order: lv_obj_move_foreground is called every draw cycle because
+ * nice_view refreshes its own canvases periodically (WPM updates etc.),
+ * and objects created after ours would otherwise appear on top.
+ *
+ * Trade-off: covers battery/USB area (pre-rotation y=0..20). BT circles
+ * and layer name are in separate canvases and remain fully visible.
  */
 #define CANVAS_SIZE 68
 
@@ -45,14 +42,16 @@ static void draw_ble_canvas(void) {
         return;
     }
 
+    /* Stay on top of nice_view canvases which refresh independently */
+    lv_obj_move_foreground(ble_canvas);
+
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    /* Draw at pre-rotation y=21: top edge of the WPM box (height=42 available) */
-    lv_canvas_draw_text(ble_canvas, 0, 21, CANVAS_SIZE, &dsc, text_buf);
+    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
 
     /* Rotate 90° CW — identical parameters to nice_view's rotate_canvas() */
     static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
@@ -115,21 +114,20 @@ static void add_ble_canvas_fn(struct k_work *work) {
                          LV_IMG_CF_TRUE_COLOR);
 
     /*
-     * LV_ALIGN_CENTER is safe regardless of whether LVGL is configured as
-     * 160×68 or 68×160 — the 68-wide canvas always fits on screen.
-     * y_ofs=+20 was the last confirmed-working position (build 1 showed the
-     * white rectangle). We keep it here to restore visibility while the
-     * pre-rotation draw coordinates are now corrected to y=21 (WPM box top
-     * per the nice_view status.c source).
+     * Mirror the nice_view "top" canvas position exactly.
+     * This places our 68×68 canvas at LVGL x=92..159 in the 160×68 display,
+     * which is the physical LEFT side of the landscape display (battery+WPM area).
+     * draw_ble_canvas() calls lv_obj_move_foreground every cycle to stay on top.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 20);
-    lv_obj_move_foreground(ble_canvas);
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 0);
 
-    lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
+    /* Initial draw: black rectangle + any text already in buffer */
+    draw_ble_canvas();
 }
 
 static int kbd_ble_display_init(void) {
-    k_work_schedule(&add_ble_canvas_work, K_MSEC(2000));
+    /* 3s delay ensures nice_view has finished creating all its canvas objects */
+    k_work_schedule(&add_ble_canvas_work, K_MSEC(3000));
     return 0;
 }
 SYS_INIT(kbd_ble_display_init, APPLICATION, 99);
