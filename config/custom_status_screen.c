@@ -119,7 +119,7 @@ static void add_ble_canvas_fn(struct k_work *work) {
      * which is the physical LEFT side of the landscape display (battery+WPM area).
      * draw_ble_canvas() calls lv_obj_move_foreground every cycle to stay on top.
      */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 70);
+    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 70, 0);
 
     /* Initial draw: black rectangle + any text already in buffer */
     draw_ble_canvas();
