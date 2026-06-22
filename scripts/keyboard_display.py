@@ -39,8 +39,34 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
+def _mac_to_int(mac: str) -> int:
+    """Convert 'AA:BB:CC:DD:EE:FF' to uint64 as Windows BLE stack expects."""
+    return int(mac.replace(":", ""), 16)
+
+
+async def _get_windows_device_id(mac: str, debug: bool = False) -> str | None:
+    """
+    Use winrt (already installed by bleak) to resolve a paired BLE device's
+    Windows device ID from its MAC address.  BleakClient on Windows needs the
+    device ID (BluetoothLE#BluetoothLE...) for paired devices that are not
+    currently advertising.
+    """
+    try:
+        from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
+        addr = _mac_to_int(mac)
+        dev = await BluetoothLEDevice.from_bluetooth_address_async(addr)
+        if dev and dev.device_id:
+            if debug:
+                print(f"[debug] Windows device ID: {dev.device_id}")
+            return dev.device_id
+    except Exception as e:
+        if debug:
+            print(f"[debug] BluetoothLEDevice lookup failed: {e}")
+    return None
+
+
 def _run_ps(script: str, debug: bool = False):
-    """Write PowerShell script to a temp file and run it; return stdout lines."""
+    """Write a PowerShell script to a temp .ps1 file and run it."""
     import subprocess, tempfile, os
     with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False,
                                      encoding='utf-8') as f:
@@ -54,63 +80,15 @@ def _run_ps(script: str, debug: bool = False):
         )
     finally:
         os.unlink(ps_file)
-    if debug:
-        print(f"[debug] PowerShell stdout:\n{r.stdout.strip()}")
     if r.stderr.strip():
-        print(f"[debug] PowerShell stderr: {r.stderr.strip()[:400]}")
+        if debug:
+            print(f"[debug] PowerShell stderr: {r.stderr.strip()[:300]}")
     return r.stdout.strip().splitlines()
 
 
-async def find_paired_windows(debug: bool = False):
-    """
-    On Windows, paired BLE devices are not advertising so BleakScanner won't
-    find them.  Use WinRT via a temp .ps1 file (WinRT type loading fails when
-    piped via stdin) to call BluetoothLEDevice::GetDeviceSelectorFromPairingState
-    and DeviceInformation::FindAllAsync, returning the Windows AEP device ID
-    that BleakClient needs (not just the MAC address).
-    Falls back to Get-PnpDevice + MAC if WinRT is unavailable.
-    """
-    # Primary: WinRT — returns proper Windows BLE device IDs for BleakClient
-    ps_winrt = r"""
-try {
-    $null = [Windows.Devices.Bluetooth.BluetoothLEDevice,Windows.Devices.Bluetooth,ContentType=WindowsRuntime]
-    $null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
-    $sel = [Windows.Devices.Bluetooth.BluetoothLEDevice]::GetDeviceSelectorFromPairingState($true)
-    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)
-    $devices = $op.AsTask().Result
-    foreach ($d in $devices) {
-        Write-Output "DEVICE|$($d.Name)|$($d.Id)"
-    }
-} catch {
-    Write-Output "ERROR|$_"
-}
-"""
-    lines = _run_ps(ps_winrt, debug=debug)
-    results = []
-    winrt_ok = False
-    for line in lines:
-        if line.startswith("ERROR|"):
-            if debug:
-                print(f"[debug] WinRT error: {line[6:]}")
-            break
-        if line.startswith("DEVICE|"):
-            winrt_ok = True
-            parts = line.split("|", 2)
-            if len(parts) == 3:
-                _, name, dev_id = parts
-                name, dev_id = name.strip(), dev_id.strip()
-                if debug:
-                    print(f"[debug] WinRT paired: {name!r}")
-                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
-                    results.append((name, dev_id))
-
-    if winrt_ok or results:
-        return results
-
-    # Fallback: Get-PnpDevice — no WinRT needed, extracts MAC from InstanceId
-    if debug:
-        print("[debug] WinRT unavailable, falling back to Get-PnpDevice")
-    ps_pnp = r"""
+def _get_paired_macs_pnp(debug: bool = False) -> list[tuple[str, str]]:
+    """Find paired BLE devices via Get-PnpDevice; returns [(name, mac), ...]."""
+    ps = r"""
 try {
     $devs = Get-PnpDevice | Where-Object { $_.InstanceId -match 'BTHLE\\DEV_' }
     foreach ($d in $devs) {
@@ -124,8 +102,8 @@ try {
     Write-Output "ERROR|$_"
 }
 """
-    lines = _run_ps(ps_pnp, debug=debug)
-    for line in lines:
+    results = []
+    for line in _run_ps(ps, debug=debug):
         if line.startswith("DEVICE|"):
             parts = line.split("|", 2)
             if len(parts) == 3:
@@ -133,8 +111,31 @@ try {
                 name, mac = name.strip(), mac.strip().upper()
                 if debug:
                     print(f"[debug] PnP paired: {name!r}  {mac}")
-                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
-                    results.append((name, mac))
+                results.append((name, mac))
+    return results
+
+
+async def find_paired_windows(debug: bool = False):
+    """
+    Find paired BLE keyboards on Windows (they don't advertise so BleakScanner
+    misses them).  Strategy:
+      1. Get-PnpDevice to find paired BLE devices and their MAC addresses.
+      2. For each matching keyboard MAC, call winrt BluetoothLEDevice to get
+         the Windows device ID that BleakClient needs for already-connected devices.
+    Returns list of (name, address) where address is the Windows device ID or MAC.
+    """
+    import platform
+    if platform.system() != "Windows":
+        return []
+
+    paired = _get_paired_macs_pnp(debug=debug)
+    results = []
+    for name, mac in paired:
+        if not any(k in name.lower() for k in KEYBOARD_NAMES):
+            continue
+        # Try to resolve to Windows device ID (needed for already-connected devices)
+        dev_id = await _get_windows_device_id(mac, debug=debug)
+        results.append((name, dev_id if dev_id else mac))
     return results
 
 
@@ -153,7 +154,6 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     if by_name:
         return by_name
 
-    # Windows: paired HID devices don't advertise — look them up via PowerShell
     import platform
     if platform.system() == "Windows":
         print("Buscando dispositivos BLE emparejados (Windows)...")
