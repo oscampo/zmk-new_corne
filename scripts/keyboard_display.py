@@ -39,7 +39,7 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
-async def find_paired_windows():
+async def find_paired_windows(debug: bool = False):
     """
     On Windows, paired BLE devices are not advertising so BleakScanner won't
     find them.  Use PowerShell to call WinRT DeviceInformation::FindAllAsync
@@ -56,7 +56,7 @@ try {
     $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel, $null, $kind)
     $devices = $op.AsTask().Result
     foreach ($d in $devices) {
-        if ($d.Name) { Write-Output "$($d.Name)|$($d.Id)" }
+        Write-Output "DEVICE|$($d.Name)|$($d.Id)"
     }
 } catch {
     Write-Error $_
@@ -68,26 +68,36 @@ try {
             input=ps,
             capture_output=True, text=True, timeout=20,
         )
+        if r.stderr.strip():
+            print(f"[debug] PowerShell stderr: {r.stderr.strip()[:400]}")
+
         results = []
         for line in r.stdout.strip().splitlines():
-            if "|" in line:
-                name, dev_id = line.split("|", 1)
-                name, dev_id = name.strip(), dev_id.strip()
-                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
-                    results.append((name, dev_id))
-        if not results and r.stderr.strip():
-            print(f"[debug] PowerShell: {r.stderr.strip()[:300]}")
+            if not line.startswith("DEVICE|"):
+                continue
+            parts = line.split("|", 2)
+            if len(parts) < 3:
+                continue
+            _, name, dev_id = parts
+            name, dev_id = name.strip(), dev_id.strip()
+            if debug:
+                print(f"[debug] BLE paired device: {name!r}  id={dev_id}")
+            if name and any(k in name.lower() for k in KEYBOARD_NAMES):
+                results.append((name, dev_id))
         return results
     except Exception as e:
         print(f"[debug] PowerShell lookup failed: {e}")
         return []
 
 
-async def find_keyboard(timeout: float = 6.0):
+async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     """Scan for keyboards by name, with fallback to Windows paired-device lookup."""
     print(f"Buscando teclado ({timeout}s)...")
 
     all_devices = await BleakScanner.discover(timeout=timeout)
+    if debug and all_devices:
+        for d in all_devices:
+            print(f"[debug] BLE scan: {d.name!r}  {d.address}")
     by_name = [
         d for d in all_devices
         if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES)
@@ -98,9 +108,9 @@ async def find_keyboard(timeout: float = 6.0):
     # Windows: paired devices don't advertise — look them up via PowerShell/WinRT
     import platform
     if platform.system() == "Windows":
-        paired = await find_paired_windows()
+        print("Buscando dispositivos BLE emparejados (Windows)...")
+        paired = await find_paired_windows(debug=debug)
         if paired:
-            # Return fake device-like objects with .name and .address = Windows device ID
             class _Dev:
                 def __init__(self, name, dev_id):
                     self.name = name
@@ -157,19 +167,24 @@ async def main():
         "--address", metavar="ADDR",
         help="Dirección BLE del teclado (omite el escaneo).",
     )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Mostrar información de depuración BLE.",
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
     address = args.address
     if not address:
-        devices = await find_keyboard()
+        devices = await find_keyboard(debug=args.debug)
         if not devices:
             print(
                 "No se encontró ningún teclado.\n"
                 "Verifica que:\n"
                 "  • El teclado esté encendido y el firmware nuevo esté flasheado\n"
                 "  • BLE esté habilitado en el teclado\n"
-                "  • Estés dentro del rango Bluetooth"
+                "  • Estés dentro del rango Bluetooth\n"
+                "\nPrueba con --debug para ver todos los dispositivos encontrados."
             )
             sys.exit(1)
 
