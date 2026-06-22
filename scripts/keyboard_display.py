@@ -42,34 +42,41 @@ KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 async def find_paired_windows(debug: bool = False):
     """
     On Windows, paired BLE devices are not advertising so BleakScanner won't
-    find them.  Use PowerShell + WinRT BluetoothLEDevice::GetDeviceSelectorFromPairingState
-    to enumerate paired BLE devices, then return (name, device_id) tuples
-    matching KEYBOARD_NAMES.
+    find them.  Use Get-PnpDevice (no WinRT required) to find paired BLE
+    devices by InstanceId pattern BTHLE\\DEV_<mac>, extract the MAC address,
+    and return (name, mac) tuples matching KEYBOARD_NAMES.
     """
-    import subprocess
+    import subprocess, tempfile, os
 
     ps = r"""
-$null = [Windows.Devices.Bluetooth.BluetoothLEDevice,Windows.Devices.Bluetooth,ContentType=WindowsRuntime]
-$null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
 try {
-    $sel = [Windows.Devices.Bluetooth.BluetoothLEDevice]::GetDeviceSelectorFromPairingState($true)
-    Write-Output "SEL|$sel"
-    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)
-    $devices = $op.AsTask().Result
-    Write-Output "COUNT|$($devices.Count)"
-    foreach ($d in $devices) {
-        Write-Output "DEVICE|$($d.Name)|$($d.Id)"
+    $devs = Get-PnpDevice | Where-Object { $_.InstanceId -match 'BTHLE\\DEV_' }
+    foreach ($d in $devs) {
+        if ($d.InstanceId -match 'DEV_([0-9A-Fa-f]{12})') {
+            $hex = $Matches[1]
+            $mac = ($hex -split '(?<=\G.{2})(?=.)') -join ':'
+            Write-Output "DEVICE|$($d.FriendlyName)|$mac"
+        }
     }
 } catch {
     Write-Output "ERROR|$_"
 }
 """
     try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
-            input=ps,
-            capture_output=True, text=True, timeout=20,
-        )
+        # Write to temp file — more reliable than -Command - on all PS versions
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False,
+                                         encoding='utf-8') as f:
+            f.write(ps)
+            ps_file = f.name
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive",
+                 "-ExecutionPolicy", "Bypass", "-File", ps_file],
+                capture_output=True, text=True, timeout=20,
+            )
+        finally:
+            os.unlink(ps_file)
+
         if debug:
             print(f"[debug] PowerShell stdout:\n{r.stdout.strip()}")
         if r.stderr.strip():
@@ -82,10 +89,10 @@ try {
             parts = line.split("|", 2)
             if len(parts) < 3:
                 continue
-            _, name, dev_id = parts
-            name, dev_id = name.strip(), dev_id.strip()
+            _, name, mac = parts
+            name, mac = name.strip(), mac.strip().upper()
             if name and any(k in name.lower() for k in KEYBOARD_NAMES):
-                results.append((name, dev_id))
+                results.append((name, mac))
         return results
     except Exception as e:
         print(f"[debug] PowerShell lookup failed: {e}")
@@ -107,17 +114,17 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     if by_name:
         return by_name
 
-    # Windows: paired HID devices don't advertise — look them up via PowerShell/WinRT
+    # Windows: paired HID devices don't advertise — look them up via Get-PnpDevice
     import platform
     if platform.system() == "Windows":
         print("Buscando dispositivos BLE emparejados (Windows)...")
         paired = await find_paired_windows(debug=debug)
         if paired:
             class _Dev:
-                def __init__(self, name, dev_id):
+                def __init__(self, name, mac):
                     self.name = name
-                    self.address = dev_id  # BleakClient accepts Windows device IDs
-            return [_Dev(n, i) for n, i in paired]
+                    self.address = mac
+            return [_Dev(n, m) for n, m in paired]
 
     return []
 
