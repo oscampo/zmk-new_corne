@@ -42,18 +42,20 @@ KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 async def find_paired_windows(debug: bool = False):
     """
     On Windows, paired BLE devices are not advertising so BleakScanner won't
-    find them.  Use PowerShell to call WinRT DeviceInformation::FindAllAsync
-    (Python winrt bindings don't expose static methods) and return a list of
-    (name, device_id) tuples matching KEYBOARD_NAMES.
+    find them.  Use PowerShell + WinRT BluetoothLEDevice::GetDeviceSelectorFromPairingState
+    to enumerate paired BLE devices, then return (name, device_id) tuples
+    matching KEYBOARD_NAMES.
     """
     import subprocess
 
+    # Use BluetoothLEDevice.GetDeviceSelectorFromPairingState(true) — this is the
+    # correct selector for paired BLE devices (HID keyboards included).
     ps = r"""
+$null = [Windows.Devices.Bluetooth.BluetoothLEDevice,Windows.Devices.Bluetooth,ContentType=WindowsRuntime]
 $null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
-$sel = "System.Devices.Aep.ProtocolId:=`"{bb7bb05e-5972-42b5-94fc-76eaa7084d49}`" AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
-$kind = [Windows.Devices.Enumeration.DeviceInformationKind]::AssociationEndpoint
 try {
-    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel, $null, $kind)
+    $sel = [Windows.Devices.Bluetooth.BluetoothLEDevice]::GetDeviceSelectorFromPairingState($true)
+    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)
     $devices = $op.AsTask().Result
     foreach ($d in $devices) {
         Write-Output "DEVICE|$($d.Name)|$($d.Id)"
@@ -81,7 +83,7 @@ try {
             _, name, dev_id = parts
             name, dev_id = name.strip(), dev_id.strip()
             if debug:
-                print(f"[debug] BLE paired device: {name!r}  id={dev_id}")
+                print(f"[debug] BLE paired: {name!r}")
             if name and any(k in name.lower() for k in KEYBOARD_NAMES):
                 results.append((name, dev_id))
         return results
@@ -105,7 +107,7 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     if by_name:
         return by_name
 
-    # Windows: paired devices don't advertise — look them up via PowerShell/WinRT
+    # Windows: paired HID devices don't advertise — look them up via PowerShell/WinRT
     import platform
     if platform.system() == "Windows":
         print("Buscando dispositivos BLE emparejados (Windows)...")
