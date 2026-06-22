@@ -39,20 +39,36 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
-async def find_keyboard(timeout: float = 6.0):
-    """Scan for keyboards by name or service UUID.
-
-    Important: if the keyboard is already connected to the OS as an HID device
-    it may not be advertising, so scanning can return nothing even though the
-    keyboard is reachable.  In that case use --address with the paired address.
+async def find_paired_windows():
     """
+    On Windows, paired BLE devices are not advertising so BleakScanner won't
+    find them.  Use WinRT DeviceInformation to enumerate paired BLE devices and
+    return a list of (name, device_id) tuples matching KEYBOARD_NAMES.
+    """
+    results = []
+    try:
+        from winrt.windows.devices.enumeration import DeviceInformation, DeviceInformationKind  # type: ignore
+        # AEP selector for paired Bluetooth LE devices
+        selector = (
+            'System.Devices.Aep.ProtocolId:="{{bb7bb05e-5972-42b5-94fc-76eaa7084d49}}"'
+            " AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
+        )
+        found = await DeviceInformation.find_all_async_with_kind_and_additional_properties(
+            selector, [], DeviceInformationKind.ASSOCIATION_ENDPOINT
+        )
+        for d in found:
+            if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES):
+                results.append((d.name, d.id))
+    except Exception:
+        pass
+    return results
+
+
+async def find_keyboard(timeout: float = 6.0):
+    """Scan for keyboards by name, with fallback to Windows paired-device lookup."""
     print(f"Buscando teclado ({timeout}s)...")
 
-    # Scan all devices — ZMK does NOT include custom 128-bit UUIDs in its
-    # advertisement packet, so filtering by SERVICE_UUID never works here.
     all_devices = await BleakScanner.discover(timeout=timeout)
-
-    # Filter by name keywords
     by_name = [
         d for d in all_devices
         if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES)
@@ -60,20 +76,17 @@ async def find_keyboard(timeout: float = 6.0):
     if by_name:
         return by_name
 
-    # On Windows the keyboard may already be paired/connected and therefore
-    # not advertising.  Try to enumerate paired BLE devices via the OS.
-    try:
-        import platform
-        if platform.system() == "Windows":
-            from bleak.backends.winrt.scanner import BleakScannerWinRT  # type: ignore
-            paired = await BleakScannerWinRT.find_device_by_filter(
-                lambda d, _: d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES),
-                timeout=2.0,
-            )
-            if paired:
-                return [paired]
-    except Exception:
-        pass
+    # Windows: paired devices don't advertise — look them up via WinRT
+    import platform
+    if platform.system() == "Windows":
+        paired = await find_paired_windows()
+        if paired:
+            # Return fake device-like objects with .name and .address = Windows device ID
+            class _Dev:
+                def __init__(self, name, dev_id):
+                    self.name = name
+                    self.address = dev_id  # BleakClient accepts Windows device IDs
+            return [_Dev(n, i) for n, i in paired]
 
     return []
 
