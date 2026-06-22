@@ -4,6 +4,9 @@ on:
   push:
     paths-ignore:
       - "keymap-drawer/**"
+      - "scripts/**"
+      - "**.md"
+      - ".github/workflows/draw.yml"
 
 jobs:
   build:
