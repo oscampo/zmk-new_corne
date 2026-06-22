@@ -36,6 +36,28 @@ static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
 static lv_obj_t  *ble_clip;
 static lv_obj_t  *ble_canvas;
 
+/* Screen that our overlay was attached to; used to detect screen changes. */
+static lv_obj_t  *ble_attached_screen;
+
+static void create_ble_overlay(lv_obj_t *screen) {
+    ble_clip = lv_obj_create(screen);
+    lv_obj_set_pos(ble_clip, 97, 0);
+    lv_obj_set_size(ble_clip, 42, 68);
+    lv_obj_set_style_bg_opa(ble_clip, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ble_clip, 0, 0);
+    lv_obj_set_style_pad_all(ble_clip, 0, 0);
+    lv_obj_set_style_radius(ble_clip, 0, 0);
+    lv_obj_set_scrollbar_mode(ble_clip, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(ble_clip, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+
+    ble_canvas = lv_canvas_create(ble_clip);
+    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
+                         LV_IMG_CF_TRUE_COLOR);
+    lv_obj_set_pos(ble_canvas, -26, 0);
+
+    ble_attached_screen = screen;
+}
+
 static void draw_ble_canvas(void) {
     if (!ble_canvas || !ble_clip) {
         return;
@@ -63,6 +85,34 @@ static void draw_ble_canvas(void) {
     img.header.h   = CANVAS_SIZE;
     lv_canvas_transform(ble_canvas, &img, 900, LV_IMG_ZOOM_NONE,
                         -1, 0, CANVAS_SIZE / 2, CANVAS_SIZE / 2, true);
+}
+
+/*
+ * LVGL timer: runs every second to ensure the overlay stays on the active
+ * screen.  When the keyboard wakes from sleep, ZMK/nice_view recreates the
+ * screen object; this timer detects the change and re-attaches the overlay.
+ */
+static void ensure_overlay_timer_cb(lv_timer_t *timer) {
+    lv_obj_t *screen = lv_scr_act();
+    if (!screen) {
+        return;
+    }
+
+    if (ble_clip && ble_attached_screen == screen) {
+        /* Still on the same screen — just keep our overlay on top */
+        lv_obj_move_foreground(ble_clip);
+        return;
+    }
+
+    /* Screen changed (wake from sleep) — delete stale objects and recreate */
+    if (ble_clip) {
+        lv_obj_del(ble_clip);   /* also deletes ble_canvas (child) */
+        ble_clip   = NULL;
+        ble_canvas = NULL;
+    }
+
+    create_ble_overlay(screen);
+    draw_ble_canvas();
 }
 
 static void refresh_ble_canvas(struct k_work *work) {
@@ -97,7 +147,7 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
         BT_GATT_PERM_WRITE, NULL, on_ble_write, NULL),
 );
 
-/* ── Add canvas to the nice_view screen ───────────────────────────────────── */
+/* ── Startup: wait for the nice_view screen, then start the watch timer ───── */
 
 static void add_ble_canvas_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(add_ble_canvas_work, add_ble_canvas_fn);
@@ -109,28 +159,11 @@ static void add_ble_canvas_fn(struct k_work *work) {
         return;
     }
 
-    /*
-     * Transparent clip container sized to the WPM area.
-     * LVGL children are clipped to the parent's content area by default,
-     * so the canvas (positioned -26px inside) only shows its WPM portion.
-     */
-    ble_clip = lv_obj_create(screen);
-    lv_obj_set_pos(ble_clip, 97, 0);
-    lv_obj_set_size(ble_clip, 42, 68);
-    lv_obj_set_style_bg_opa(ble_clip, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ble_clip, 0, 0);
-    lv_obj_set_style_pad_all(ble_clip, 0, 0);
-    lv_obj_set_style_radius(ble_clip, 0, 0);
-    lv_obj_set_scrollbar_mode(ble_clip, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(ble_clip, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
-
-    /* Canvas as child of clip; offset -26 so its WPM portion fills the clip */
-    ble_canvas = lv_canvas_create(ble_clip);
-    lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
-                         LV_IMG_CF_TRUE_COLOR);
-    lv_obj_set_pos(ble_canvas, -26, 0);
-
+    create_ble_overlay(screen);
     draw_ble_canvas();
+
+    /* 1-second timer keeps the overlay alive across sleep/wake cycles */
+    lv_timer_create(ensure_overlay_timer_cb, 1000, NULL);
 }
 
 static int kbd_ble_display_init(void) {
