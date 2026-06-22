@@ -39,16 +39,78 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 
+def _run_ps(script: str, debug: bool = False):
+    """Write PowerShell script to a temp file and run it; return stdout lines."""
+    import subprocess, tempfile, os
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False,
+                                     encoding='utf-8') as f:
+        f.write(script)
+        ps_file = f.name
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive",
+             "-ExecutionPolicy", "Bypass", "-File", ps_file],
+            capture_output=True, text=True, timeout=20,
+        )
+    finally:
+        os.unlink(ps_file)
+    if debug:
+        print(f"[debug] PowerShell stdout:\n{r.stdout.strip()}")
+    if r.stderr.strip():
+        print(f"[debug] PowerShell stderr: {r.stderr.strip()[:400]}")
+    return r.stdout.strip().splitlines()
+
+
 async def find_paired_windows(debug: bool = False):
     """
     On Windows, paired BLE devices are not advertising so BleakScanner won't
-    find them.  Use Get-PnpDevice (no WinRT required) to find paired BLE
-    devices by InstanceId pattern BTHLE\\DEV_<mac>, extract the MAC address,
-    and return (name, mac) tuples matching KEYBOARD_NAMES.
+    find them.  Use WinRT via a temp .ps1 file (WinRT type loading fails when
+    piped via stdin) to call BluetoothLEDevice::GetDeviceSelectorFromPairingState
+    and DeviceInformation::FindAllAsync, returning the Windows AEP device ID
+    that BleakClient needs (not just the MAC address).
+    Falls back to Get-PnpDevice + MAC if WinRT is unavailable.
     """
-    import subprocess, tempfile, os
+    # Primary: WinRT — returns proper Windows BLE device IDs for BleakClient
+    ps_winrt = r"""
+try {
+    $null = [Windows.Devices.Bluetooth.BluetoothLEDevice,Windows.Devices.Bluetooth,ContentType=WindowsRuntime]
+    $null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
+    $sel = [Windows.Devices.Bluetooth.BluetoothLEDevice]::GetDeviceSelectorFromPairingState($true)
+    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel)
+    $devices = $op.AsTask().Result
+    foreach ($d in $devices) {
+        Write-Output "DEVICE|$($d.Name)|$($d.Id)"
+    }
+} catch {
+    Write-Output "ERROR|$_"
+}
+"""
+    lines = _run_ps(ps_winrt, debug=debug)
+    results = []
+    winrt_ok = False
+    for line in lines:
+        if line.startswith("ERROR|"):
+            if debug:
+                print(f"[debug] WinRT error: {line[6:]}")
+            break
+        if line.startswith("DEVICE|"):
+            winrt_ok = True
+            parts = line.split("|", 2)
+            if len(parts) == 3:
+                _, name, dev_id = parts
+                name, dev_id = name.strip(), dev_id.strip()
+                if debug:
+                    print(f"[debug] WinRT paired: {name!r}")
+                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
+                    results.append((name, dev_id))
 
-    ps = r"""
+    if winrt_ok or results:
+        return results
+
+    # Fallback: Get-PnpDevice — no WinRT needed, extracts MAC from InstanceId
+    if debug:
+        print("[debug] WinRT unavailable, falling back to Get-PnpDevice")
+    ps_pnp = r"""
 try {
     $devs = Get-PnpDevice | Where-Object { $_.InstanceId -match 'BTHLE\\DEV_' }
     foreach ($d in $devs) {
@@ -62,41 +124,18 @@ try {
     Write-Output "ERROR|$_"
 }
 """
-    try:
-        # Write to temp file — more reliable than -Command - on all PS versions
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False,
-                                         encoding='utf-8') as f:
-            f.write(ps)
-            ps_file = f.name
-        try:
-            r = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive",
-                 "-ExecutionPolicy", "Bypass", "-File", ps_file],
-                capture_output=True, text=True, timeout=20,
-            )
-        finally:
-            os.unlink(ps_file)
-
-        if debug:
-            print(f"[debug] PowerShell stdout:\n{r.stdout.strip()}")
-        if r.stderr.strip():
-            print(f"[debug] PowerShell stderr: {r.stderr.strip()[:400]}")
-
-        results = []
-        for line in r.stdout.strip().splitlines():
-            if not line.startswith("DEVICE|"):
-                continue
+    lines = _run_ps(ps_pnp, debug=debug)
+    for line in lines:
+        if line.startswith("DEVICE|"):
             parts = line.split("|", 2)
-            if len(parts) < 3:
-                continue
-            _, name, mac = parts
-            name, mac = name.strip(), mac.strip().upper()
-            if name and any(k in name.lower() for k in KEYBOARD_NAMES):
-                results.append((name, mac))
-        return results
-    except Exception as e:
-        print(f"[debug] PowerShell lookup failed: {e}")
-        return []
+            if len(parts) == 3:
+                _, name, mac = parts
+                name, mac = name.strip(), mac.strip().upper()
+                if debug:
+                    print(f"[debug] PnP paired: {name!r}  {mac}")
+                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
+                    results.append((name, mac))
+    return results
 
 
 async def find_keyboard(timeout: float = 6.0, debug: bool = False):
@@ -114,17 +153,17 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     if by_name:
         return by_name
 
-    # Windows: paired HID devices don't advertise — look them up via Get-PnpDevice
+    # Windows: paired HID devices don't advertise — look them up via PowerShell
     import platform
     if platform.system() == "Windows":
         print("Buscando dispositivos BLE emparejados (Windows)...")
         paired = await find_paired_windows(debug=debug)
         if paired:
             class _Dev:
-                def __init__(self, name, mac):
+                def __init__(self, name, address):
                     self.name = name
-                    self.address = mac
-            return [_Dev(n, m) for n, m in paired]
+                    self.address = address
+            return [_Dev(n, a) for n, a in paired]
 
     return []
 
