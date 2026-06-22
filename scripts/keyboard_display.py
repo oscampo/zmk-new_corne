@@ -31,46 +31,56 @@ import sys
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
-# Must match config/custom_status_screen.c
+# Must match config/ble_display_service.c
 SERVICE_UUID = "00001523-1212-efde-1523-785feabcd123"
 CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 
 # Keywords used to identify the keyboard in BLE scan results
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
-# AQS filter for paired Bluetooth LE Association Endpoint devices.
-# Equivalent to BluetoothLEDevice.GetDeviceSelectorFromPairingState(true).
-_BLE_PAIRED_AQS = (
-    'System.Devices.Aep.ProtocolId:="{bb7bb05e-5972-42b5-94fc-76eaa7084d49}"'
-    " AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
-)
-
 
 async def find_paired_windows():
     """
-    On Windows, paired/connected BLE HID devices don't advertise, so
-    BleakScanner.discover() won't find them.  Use WinRT DeviceInformation
-    to enumerate paired BLE devices and return (name, device_id) tuples
-    for any that match KEYBOARD_NAMES.
-    BleakClient accepts Windows device IDs directly (no MAC address needed).
+    On Windows, paired BLE devices are not advertising so BleakScanner won't
+    find them.  Use PowerShell to call WinRT DeviceInformation::FindAllAsync
+    (Python winrt bindings don't expose static methods) and return a list of
+    (name, device_id) tuples matching KEYBOARD_NAMES.
     """
-    results = []
+    import subprocess
+
+    ps = r"""
+$null = [Windows.Devices.Enumeration.DeviceInformation,Windows.Devices.Enumeration,ContentType=WindowsRuntime]
+$sel = "System.Devices.Aep.ProtocolId:=`"{bb7bb05e-5972-42b5-94fc-76eaa7084d49}`" AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
+$kind = [Windows.Devices.Enumeration.DeviceInformationKind]::AssociationEndpoint
+try {
+    $op = [Windows.Devices.Enumeration.DeviceInformation]::FindAllAsync($sel, $null, $kind)
+    $devices = $op.AsTask().Result
+    foreach ($d in $devices) {
+        if ($d.Name) { Write-Output "$($d.Name)|$($d.Id)" }
+    }
+} catch {
+    Write-Error $_
+}
+"""
     try:
-        from winrt.windows.devices.enumeration import (  # type: ignore
-            DeviceInformation,
-            DeviceInformationKind,
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", "-"],
+            input=ps,
+            capture_output=True, text=True, timeout=20,
         )
-        found = await DeviceInformation.find_all_async(
-            _BLE_PAIRED_AQS,
-            [],
-            DeviceInformationKind.ASSOCIATION_ENDPOINT,
-        )
-        for d in found:
-            if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES):
-                results.append((d.name, d.id))
+        results = []
+        for line in r.stdout.strip().splitlines():
+            if "|" in line:
+                name, dev_id = line.split("|", 1)
+                name, dev_id = name.strip(), dev_id.strip()
+                if name and any(k in name.lower() for k in KEYBOARD_NAMES):
+                    results.append((name, dev_id))
+        if not results and r.stderr.strip():
+            print(f"[debug] PowerShell: {r.stderr.strip()[:300]}")
+        return results
     except Exception as e:
-        print(f"[debug] WinRT paired-device lookup failed: {e}")
-    return results
+        print(f"[debug] PowerShell lookup failed: {e}")
+        return []
 
 
 async def find_keyboard(timeout: float = 6.0):
@@ -85,12 +95,12 @@ async def find_keyboard(timeout: float = 6.0):
     if by_name:
         return by_name
 
-    # Windows: paired/connected HID devices don't advertise — use WinRT
+    # Windows: paired devices don't advertise — look them up via PowerShell/WinRT
     import platform
     if platform.system() == "Windows":
-        print("No encontrado en escaneo. Buscando entre dispositivos emparejados...")
         paired = await find_paired_windows()
         if paired:
+            # Return fake device-like objects with .name and .address = Windows device ID
             class _Dev:
                 def __init__(self, name, dev_id):
                     self.name = name
