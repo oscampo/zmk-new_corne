@@ -31,7 +31,7 @@ import sys
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
-# Must match config/ble_display_service.c
+# Must match config/custom_status_screen.c
 SERVICE_UUID = "00001523-1212-efde-1523-785feabcd123"
 CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 
@@ -41,26 +41,25 @@ KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
 async def find_paired_windows():
     """
-    On Windows, paired BLE devices are not advertising so BleakScanner won't
-    find them.  Use WinRT DeviceInformation to enumerate paired BLE devices and
-    return a list of (name, device_id) tuples matching KEYBOARD_NAMES.
+    On Windows, paired/connected BLE HID devices don't advertise, so
+    BleakScanner.discover() won't find them.  Use the WinRT
+    BluetoothLEDevice selector to enumerate paired devices and return a
+    list of (name, device_id) tuples for any that match KEYBOARD_NAMES.
+    BleakClient accepts Windows device IDs directly (no address needed).
     """
     results = []
     try:
-        from winrt.windows.devices.enumeration import DeviceInformation, DeviceInformationKind  # type: ignore
-        # AEP selector for paired Bluetooth LE devices
-        selector = (
-            'System.Devices.Aep.ProtocolId:="{{bb7bb05e-5972-42b5-94fc-76eaa7084d49}}"'
-            " AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
-        )
-        found = await DeviceInformation.find_all_async_with_kind_and_additional_properties(
-            selector, [], DeviceInformationKind.ASSOCIATION_ENDPOINT
-        )
+        from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
+        from winrt.windows.devices.enumeration import DeviceInformation  # type: ignore
+
+        # AQS selector for all paired Bluetooth LE devices
+        selector = BluetoothLEDevice.get_device_selector_from_pairing_state(True)
+        found = await DeviceInformation.find_all_async(selector)
         for d in found:
             if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES):
                 results.append((d.name, d.id))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[debug] WinRT paired-device lookup failed: {e}")
     return results
 
 
@@ -76,12 +75,12 @@ async def find_keyboard(timeout: float = 6.0):
     if by_name:
         return by_name
 
-    # Windows: paired devices don't advertise — look them up via WinRT
+    # Windows: paired/connected HID devices don't advertise — use WinRT
     import platform
     if platform.system() == "Windows":
+        print("No encontrado en escaneo. Buscando entre dispositivos emparejados...")
         paired = await find_paired_windows()
         if paired:
-            # Return fake device-like objects with .name and .address = Windows device ID
             class _Dev:
                 def __init__(self, name, dev_id):
                     self.name = name
