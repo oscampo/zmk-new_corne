@@ -114,8 +114,15 @@ static void add_ble_canvas_fn(struct k_work *work) {
     lv_canvas_set_buffer(ble_canvas, ble_cbuf, CANVAS_SIZE, CANVAS_SIZE,
                          LV_IMG_CF_TRUE_COLOR);
 
-    /* Same alignment as nice_view's "top" canvas in the 160×68 LVGL display */
-    lv_obj_align(ble_canvas, LV_ALIGN_TOP_RIGHT, 0, 0);
+    /*
+     * LV_ALIGN_CENTER is safe regardless of whether LVGL is configured as
+     * 160×68 or 68×160 — the 68-wide canvas always fits on screen.
+     * y_ofs=+20 was the last confirmed-working position (build 1 showed the
+     * white rectangle). We keep it here to restore visibility while the
+     * pre-rotation draw coordinates are now corrected to y=21 (WPM box top
+     * per the nice_view status.c source).
+     */
+    lv_obj_align(ble_canvas, LV_ALIGN_CENTER, 0, 20);
     lv_obj_move_foreground(ble_canvas);
 
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
