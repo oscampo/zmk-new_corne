@@ -38,23 +38,33 @@ CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
 # Keywords used to identify the keyboard in BLE scan results
 KEYBOARD_NAMES = ["zmk", "corne", "eyelash"]
 
+# AQS filter for paired Bluetooth LE Association Endpoint devices.
+# Equivalent to BluetoothLEDevice.GetDeviceSelectorFromPairingState(true).
+_BLE_PAIRED_AQS = (
+    'System.Devices.Aep.ProtocolId:="{bb7bb05e-5972-42b5-94fc-76eaa7084d49}"'
+    " AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True"
+)
+
 
 async def find_paired_windows():
     """
     On Windows, paired/connected BLE HID devices don't advertise, so
-    BleakScanner.discover() won't find them.  Use the WinRT
-    BluetoothLEDevice selector to enumerate paired devices and return a
-    list of (name, device_id) tuples for any that match KEYBOARD_NAMES.
-    BleakClient accepts Windows device IDs directly (no address needed).
+    BleakScanner.discover() won't find them.  Use WinRT DeviceInformation
+    to enumerate paired BLE devices and return (name, device_id) tuples
+    for any that match KEYBOARD_NAMES.
+    BleakClient accepts Windows device IDs directly (no MAC address needed).
     """
     results = []
     try:
-        from winrt.windows.devices.bluetooth import BluetoothLEDevice  # type: ignore
-        from winrt.windows.devices.enumeration import DeviceInformation  # type: ignore
-
-        # AQS selector for all paired Bluetooth LE devices
-        selector = BluetoothLEDevice.get_device_selector_from_pairing_state(True)
-        found = await DeviceInformation.find_all_async(selector)
+        from winrt.windows.devices.enumeration import (  # type: ignore
+            DeviceInformation,
+            DeviceInformationKind,
+        )
+        found = await DeviceInformation.find_all_async(
+            _BLE_PAIRED_AQS,
+            [],
+            DeviceInformationKind.ASSOCIATION_ENDPOINT,
+        )
         for d in found:
             if d.name and any(k in d.name.lower() for k in KEYBOARD_NAMES):
                 results.append((d.name, d.id))
