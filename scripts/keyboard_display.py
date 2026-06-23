@@ -24,6 +24,9 @@ Usage examples:
     # Pipe from any command
     curl -s 'https://api.example.com/score' | python keyboard_display.py --watch
 
+    # Sync clock (sent automatically on every connection; also use to reset display to clock)
+    python keyboard_display.py --clock
+
     # Pomodoro timer (preset)
     python keyboard_display.py --pomodoro classic   # (25,5)x4 + 15 min long break
     python keyboard_display.py --pomodoro short     # (15,3)x4 + 10 min long break
@@ -45,6 +48,7 @@ import sys
 import time
 import json
 import urllib.request
+from datetime import timezone, datetime
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
@@ -429,6 +433,15 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
     return []
 
 
+async def sync_clock(address: str, paired_windows: bool, debug: bool) -> None:
+    """Send current UTC Unix timestamp to the keyboard so it can show the clock."""
+    unix_now = int(datetime.now(timezone.utc).timestamp())
+    cmd = f"T:{unix_now}"
+    ok = await send_text(address, cmd, paired_windows=paired_windows, debug=debug)
+    if ok and debug:
+        print(f"[debug] Hora sincronizada: {unix_now} UTC")
+
+
 async def send_text(address: str, text: str, paired_windows: bool = False,
                     debug: bool = False) -> bool:
     """Connect to the keyboard and write text to the display characteristic."""
@@ -501,6 +514,10 @@ async def main():
         "--live", action="store_true",
         help="With --nfl: refresh scores from the ESPN API every 30 seconds.",
     )
+    parser.add_argument(
+        "--clock", action="store_true",
+        help="Sincronizar hora y cambiar el display a modo reloj.",
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
@@ -535,10 +552,19 @@ async def main():
     if args.scan:
         return
 
+    # ── Sync clock on every connection (enables clock mode as default) ────────
+    if not args.clear:  # --clear explicitly clears; all other modes sync first
+        await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
+
     # ── Dispatch ──────────────────────────────────────────────────────────────
-    if args.nfl is not None:
+    if args.clock:
+        print("✓ Reloj sincronizado. El display mostrará la hora.")
+
+    elif args.nfl is not None:
         await run_nfl(address, team_filter=args.nfl.strip(), live=args.live,
                       paired_windows=paired_windows, debug=args.debug)
+        # Restore clock after nfl mode
+        await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
 
     elif args.pomodoro is not None:
         try:
@@ -548,6 +574,8 @@ async def main():
             sys.exit(1)
         await run_pomodoro(address, work, brk, cycles, long_brk,
                            paired_windows, args.debug)
+        # Restore clock after pomodoro
+        await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
 
     elif args.clear:
         await send_text(address, "", paired_windows=paired_windows, debug=args.debug)
@@ -566,7 +594,7 @@ async def main():
         await send_text(address, args.text, paired_windows=paired_windows,
                         debug=args.debug)
 
-    else:
+    elif not args.clock:
         parser.print_help()
 
 

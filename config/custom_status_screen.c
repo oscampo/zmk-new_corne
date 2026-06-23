@@ -4,11 +4,28 @@
 #include <zephyr/init.h>
 #include <lvgl.h>
 #include <string.h>
+#include <stdio.h>
 
-/* ── BLE text buffer ──────────────────────────────────────────────────────── */
+/* ── BLE text / time buffer ───────────────────────────────────────────────── */
 
 #define TEXT_MAX_LEN 64
-static char text_buf[TEXT_MAX_LEN + 1];
+static char text_buf[TEXT_MAX_LEN + 1];  /* "" = show clock if synced */
+
+/*
+ * Clock sync: the host sends "T:<unix_seconds>" via BLE to set the time.
+ * We store the Unix timestamp and the uptime at sync so we can compute the
+ * current time without an RTC: current_unix = sync_unix + (uptime - sync_uptime) / 1000
+ */
+static int64_t  clock_sync_unix_s;   /* Unix seconds at last sync (0 = not synced) */
+static int64_t  clock_sync_uptime_ms;
+
+static int64_t current_unix_seconds(void) {
+    if (clock_sync_unix_s == 0) {
+        return 0;
+    }
+    int64_t elapsed_ms = k_uptime_get() - clock_sync_uptime_ms;
+    return clock_sync_unix_s + elapsed_ms / 1000;
+}
 
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
@@ -19,24 +36,16 @@ static char text_buf[TEXT_MAX_LEN + 1];
  *
  * WPM area: physical y=21..62 → LVGL x=97..138 (42px), y=0..67 (68px).
  *
- * Approach: 68×68 square canvas (lv_canvas_transform works on squares) placed
- * inside a transparent 42×68 clip container that limits visibility to the WPM
- * area only. The canvas is offset -26px horizontally inside the clip so the
- * WPM portion of the rotated canvas aligns with the clip window.
- *
- * Clip container: LVGL x=97..138, y=0..67 → physical y=21..62, x=0..67 ✓
- * Canvas inside clip: position (-26, 0) → absolute LVGL x=71..138
- *   canvas_x=26..67 (the part inside the clip) → after CW90 → pre_y=0..41
- *   canvas_x=0..25  (the BT circles portion)   → clipped away ✓
- * Battery area (LVGL x=139..159): not covered → visible from nice_view ✓
+ * Pre-rotation canvas (68×68): text drawn left→right, top→bottom.
+ * After 90° CW rotation: pre_y=0..41 maps to physical_y=21..62 (visible).
+ * Montserrat 20 (20px tall, ~12px/char): "HH:MM" = 5×12=60px ≤ 68px ✓
+ *                                         height 20px ≤ 41px visible ✓
  */
 #define CANVAS_SIZE 68
 
 static lv_color_t ble_cbuf[CANVAS_SIZE * CANVAS_SIZE];
 static lv_obj_t  *ble_clip;
 static lv_obj_t  *ble_canvas;
-
-/* Screen that our overlay was attached to; used to detect screen changes. */
 static lv_obj_t  *ble_attached_screen;
 
 static void create_ble_overlay(lv_obj_t *screen) {
@@ -63,17 +72,32 @@ static void draw_ble_canvas(void) {
         return;
     }
 
-    /* Stay on top of nice_view canvases */
     lv_obj_move_foreground(ble_clip);
-
     lv_canvas_fill_bg(ble_canvas, lv_color_black(), LV_OPA_COVER);
 
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
-    /* pre_y=0: maps to canvas_x=67 → physical y=21 (top of WPM area) */
-    lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+    bool show_clock = (text_buf[0] == '\0' && clock_sync_unix_s != 0);
+
+    if (show_clock) {
+        /* Large font clock: HH:MM centered on the canvas */
+        dsc.font = &lv_font_montserrat_20;
+
+        int64_t t = current_unix_seconds();
+        int seconds_of_day = (int)(t % 86400);
+        int hh = seconds_of_day / 3600;
+        int mm = (seconds_of_day % 3600) / 60;
+
+        char clock_str[6];
+        snprintf(clock_str, sizeof(clock_str), "%02d:%02d", hh, mm);
+        lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, clock_str);
+    } else if (text_buf[0] != '\0') {
+        /* Text mode: default font */
+        lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+    }
+    /* else: no sync yet, show nothing */
 
     /* Rotate 90° CW — same as nice_view's rotate_canvas() */
     static lv_color_t cbuf_tmp[CANVAS_SIZE * CANVAS_SIZE];
@@ -88,9 +112,7 @@ static void draw_ble_canvas(void) {
 }
 
 /*
- * LVGL timer: runs every second to ensure the overlay stays on the active
- * screen.  When the keyboard wakes from sleep, ZMK/nice_view recreates the
- * screen object; this timer detects the change and re-attaches the overlay.
+ * LVGL timer (1s): keeps overlay on the active screen and updates the clock.
  */
 static void ensure_overlay_timer_cb(lv_timer_t *timer) {
     lv_obj_t *screen = lv_scr_act();
@@ -99,14 +121,17 @@ static void ensure_overlay_timer_cb(lv_timer_t *timer) {
     }
 
     if (ble_clip && ble_attached_screen == screen) {
-        /* Still on the same screen — just keep our overlay on top */
         lv_obj_move_foreground(ble_clip);
+        /* Redraw clock every second when in clock mode */
+        if (text_buf[0] == '\0' && clock_sync_unix_s != 0) {
+            draw_ble_canvas();
+        }
         return;
     }
 
-    /* Screen changed (wake from sleep) — delete stale objects and recreate */
+    /* Screen changed (wake from sleep) — recreate overlay */
     if (ble_clip) {
-        lv_obj_del(ble_clip);   /* also deletes ble_canvas (child) */
+        lv_obj_del(ble_clip);
         ble_clip   = NULL;
         ble_canvas = NULL;
     }
@@ -131,6 +156,24 @@ static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *att
     uint16_t n = MIN(len, TEXT_MAX_LEN - offset);
     memcpy(text_buf + offset, buf, n);
     text_buf[offset + n] = '\0';
+
+    /*
+     * Special command: "T:<unix_seconds>" — sync the clock.
+     * After parsing, clear text_buf so the display switches to clock mode.
+     */
+    if (text_buf[0] == 'T' && text_buf[1] == ':') {
+        int64_t unix_s = 0;
+        const char *p = text_buf + 2;
+        while (*p >= '0' && *p <= '9') {
+            unix_s = unix_s * 10 + (*p++ - '0');
+        }
+        if (unix_s > 0) {
+            clock_sync_unix_s   = unix_s;
+            clock_sync_uptime_ms = k_uptime_get();
+        }
+        text_buf[0] = '\0';  /* switch to clock display mode */
+    }
+
     k_work_submit(&refresh_work);
     return n;
 }
@@ -147,7 +190,7 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
         BT_GATT_PERM_WRITE, NULL, on_ble_write, NULL),
 );
 
-/* ── Startup: wait for the nice_view screen, then start the watch timer ───── */
+/* ── Startup ──────────────────────────────────────────────────────────────── */
 
 static void add_ble_canvas_fn(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(add_ble_canvas_work, add_ble_canvas_fn);
@@ -162,7 +205,6 @@ static void add_ble_canvas_fn(struct k_work *work) {
     create_ble_overlay(screen);
     draw_ble_canvas();
 
-    /* 1-second timer keeps the overlay alive across sleep/wake cycles */
     lv_timer_create(ensure_overlay_timer_cb, 1000, NULL);
 }
 
