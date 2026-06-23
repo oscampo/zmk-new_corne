@@ -267,19 +267,36 @@ def format_nfl_game(game: dict) -> str:
     home  = game["home"]
     state = game["status_state"]
 
-    line1 = f"{away} vs {home}"
+    line1 = f"{away}-{home}"
 
     if state == "post" and game["away_score"] and game["home_score"]:
+        # Final result: 3 lines — matchup / score / Final
         line2 = f"{game['away_score']}-{game['home_score']}"
+        return f"{line1}\n{line2}\nFinal"
+
     elif state == "in":
+        # Live: matchup / score / quarter+time
         score = f"{game['away_score']}-{game['home_score']}"
         detail = game["status_detail"][:10]
-        line2 = f"{score} {detail}"
-    else:
-        # Pre-game: show scheduled date/time from ESPN (e.g. "9/13 - 4:25 PM ET")
-        line2 = game["status_detail"][:20]
+        return f"{line1}\n{score}\n{detail}"
 
-    return f"{line1}\n{line2}"
+    else:
+        # Pre-game: parse ESPN detail "9/13 - 4:25 PM ET" → date + time
+        detail = game["status_detail"]  # e.g. "9/13 - 4:25 PM ET"
+        parts = detail.split(" - ", 1)
+        date_str = parts[0].strip() if parts else detail[:5]
+        time_str = ""
+        if len(parts) > 1:
+            # "4:25 PM ET" → "4:25p"
+            t = parts[1].strip()
+            t_parts = t.split()
+            if len(t_parts) >= 2:
+                hhmm = t_parts[0]
+                ampm = t_parts[1][0].lower()  # "P" or "A" → "p" or "a"
+                time_str = f"{hhmm}{ampm}"
+            else:
+                time_str = t[:8]
+        return f"{line1}\n{date_str}\n{time_str}"
 
 
 async def run_nfl(address: str, team_filter: str, live: bool,
