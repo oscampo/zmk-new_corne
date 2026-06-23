@@ -52,6 +52,35 @@ from datetime import timezone, datetime
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
+
+def _detect_time_format() -> tuple[int, bool]:
+    """
+    Returns (local_offset_seconds, use_12h).
+    local_offset_seconds: seconds to add to UTC to get local time.
+    use_12h: True if the system uses 12-hour clock.
+    """
+    local_now = datetime.now().astimezone()
+    offset_s = int(local_now.utcoffset().total_seconds())
+
+    use_12h = False
+    try:
+        import platform
+        if platform.system() == "Windows":
+            import winreg  # type: ignore
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Control Panel\International")
+            itime = winreg.QueryValueEx(key, "iTime")[0]
+            winreg.CloseKey(key)
+            use_12h = (str(itime) == "0")
+        else:
+            # Check if system locale formats 13:00 with AM/PM
+            test = datetime(2000, 1, 1, 13, 0).strftime("%X")
+            use_12h = "PM" in test.upper() or "AM" in test.upper()
+    except Exception:
+        pass  # default 24h
+
+    return offset_s, use_12h
+
 # Must match config/ble_display_service.c
 SERVICE_UUID = "00001523-1212-efde-1523-785feabcd123"
 CHAR_UUID    = "00001524-1212-efde-1523-785feabcd123"
@@ -147,25 +176,10 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
 NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
 
-def fetch_nfl_games(team_filter: str = "") -> list[dict]:
-    """
-    Fetch current week's NFL games from the ESPN public API.
-    Returns a list of dicts with keys: away, home, away_score, home_score,
-    status_detail, status_state, week.
-    Optionally filters to games where either team abbreviation matches team_filter.
-    """
-    try:
-        with urllib.request.urlopen(NFL_SCOREBOARD_URL, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        print(f"NFL API error: {e}")
-        return []
-
-    week = ""
-    season_type = data.get("season", {}).get("type", {})
+def _parse_espn_events(data: dict, team_filter: str) -> list[dict]:
+    """Parse ESPN scoreboard JSON into a list of game dicts."""
     week_num = data.get("week", {}).get("number", "")
-    if week_num:
-        week = f"Wk{week_num}"
+    week = f"Wk{week_num}" if week_num else ""
 
     games = []
     for event in data.get("events", []):
@@ -174,7 +188,6 @@ def fetch_nfl_games(team_filter: str = "") -> list[dict]:
         if len(competitors) < 2:
             continue
 
-        # ESPN returns home/away via homeAway field
         teams = {}
         for c in competitors:
             side = c.get("homeAway", "home")
@@ -185,22 +198,17 @@ def fetch_nfl_games(team_filter: str = "") -> list[dict]:
 
         away = teams.get("away", {})
         home = teams.get("home", {})
+        status_type = comp.get("status", {}).get("type", {})
 
-        status = comp.get("status", {})
-        status_type = status.get("type", {})
-        status_detail = status_type.get("shortDetail", status_type.get("detail", ""))
-        status_state = status_type.get("state", "pre")  # pre / in / post
-
-        game = {
-            "away": away.get("abbr", "???"),
-            "home": home.get("abbr", "???"),
-            "away_score": away.get("score", ""),
-            "home_score": home.get("score", ""),
-            "status_detail": status_detail,
-            "status_state": status_state,
-            "week": week,
-        }
-        games.append(game)
+        games.append({
+            "away":          away.get("abbr", "???"),
+            "home":          home.get("abbr", "???"),
+            "away_score":    away.get("score", ""),
+            "home_score":    home.get("score", ""),
+            "status_detail": status_type.get("shortDetail", ""),
+            "status_state":  status_type.get("state", "pre"),
+            "week":          week,
+        })
 
     if team_filter:
         tf = team_filter.upper()
@@ -209,26 +217,70 @@ def fetch_nfl_games(team_filter: str = "") -> list[dict]:
     return games
 
 
+def fetch_nfl_games(team_filter: str = "") -> list[dict]:
+    """
+    Fetch NFL games from ESPN.  Prefers completed (post) games from the current
+    week; if none are completed yet, falls back to the previous week so the
+    display always shows the most recent results.
+    """
+    def _get(url: str) -> dict:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    try:
+        data = _get(NFL_SCOREBOARD_URL)
+    except Exception as e:
+        print(f"NFL API error: {e}")
+        return []
+
+    games = _parse_espn_events(data, team_filter)
+    has_completed = any(g["status_state"] == "post" for g in games)
+
+    # If no completed games this week, try the previous week
+    if not has_completed and not any(g["status_state"] == "in" for g in games):
+        try:
+            season_year = data.get("season", {}).get("year", 2024)
+            week_num = data.get("week", {}).get("number", 1)
+            if week_num and week_num > 1:
+                prev_url = (
+                    f"{NFL_SCOREBOARD_URL}?seasontype=2"
+                    f"&season={season_year}&week={week_num - 1}"
+                )
+                prev_data = _get(prev_url)
+                prev_games = _parse_espn_events(prev_data, team_filter)
+                if prev_games:
+                    games = prev_games
+        except Exception:
+            pass
+
+    return games
+
+
 def format_nfl_game(game: dict) -> str:
     """
-    Format a game dict into a 3-line string for the keyboard display (~25 chars/line).
-    Line 1: score or matchup
-    Line 2: game status
-    Line 3: week
+    Format a game for the keyboard display (2 lines, ~12 chars each):
+      GB vs MIN
+        9-13
+    For live games the second line shows the current status.
     """
-    away = game["away"]
-    home = game["home"]
+    away  = game["away"]
+    home  = game["home"]
     state = game["status_state"]
 
-    if state in ("in", "post") and game["away_score"] != "" and game["home_score"] != "":
-        line1 = f"{away} {game['away_score']} {home} {game['home_score']}"
+    line1 = f"{away} vs {home}"
+
+    if state == "post" and game["away_score"] and game["home_score"]:
+        line2 = f"  {game['away_score']}-{game['home_score']}"
+    elif state == "in":
+        # Live: show score + quarter/time
+        score = f"{game['away_score']}-{game['home_score']}"
+        detail = game["status_detail"][:10]
+        line2 = f"{score} {detail}"
     else:
-        line1 = f"{away}  vs  {home}"
+        # Pre-game: show scheduled time
+        line2 = f"  {game['status_detail'][:12]}"
 
-    line2 = game["status_detail"][:25]
-    line3 = game["week"]
-
-    return f"{line1}\n{line2}\n{line3}"
+    return f"{line1}\n{line2}"
 
 
 async def run_nfl(address: str, team_filter: str, live: bool,
@@ -434,12 +486,21 @@ async def find_keyboard(timeout: float = 6.0, debug: bool = False):
 
 
 async def sync_clock(address: str, paired_windows: bool, debug: bool) -> None:
-    """Send current UTC Unix timestamp to the keyboard so it can show the clock."""
-    unix_now = int(datetime.now(timezone.utc).timestamp())
-    cmd = f"T:{unix_now}"
+    """
+    Sync local time to the keyboard.
+    Sends T:<local_unix>:A (12h) or T:<local_unix>:H (24h).
+    The firmware does local_unix % 86400 to get seconds-since-midnight in local time.
+    """
+    offset_s, use_12h = _detect_time_format()
+    utc_now = int(datetime.now(timezone.utc).timestamp())
+    local_unix = utc_now + offset_s
+    mode = "A" if use_12h else "H"
+    cmd = f"T:{local_unix}:{mode}"
     ok = await send_text(address, cmd, paired_windows=paired_windows, debug=debug)
     if ok and debug:
-        print(f"[debug] Hora sincronizada: {unix_now} UTC")
+        fmt = "12h" if use_12h else "24h"
+        tz_h = offset_s // 3600
+        print(f"[debug] Hora sincronizada: UTC{tz_h:+d} modo {fmt}")
 
 
 async def send_text(address: str, text: str, paired_windows: bool = False,

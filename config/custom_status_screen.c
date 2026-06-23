@@ -18,6 +18,7 @@ static char text_buf[TEXT_MAX_LEN + 1];  /* "" = show clock if synced */
  */
 static int64_t  clock_sync_unix_s;   /* Unix seconds at last sync (0 = not synced) */
 static int64_t  clock_sync_uptime_ms;
+static bool     clock_12h;            /* true = 12h AM/PM, false = 24h */
 
 static int64_t current_unix_seconds(void) {
     if (clock_sync_unix_s == 0) {
@@ -90,8 +91,15 @@ static void draw_ble_canvas(void) {
         int hh = seconds_of_day / 3600;
         int mm = (seconds_of_day % 3600) / 60;
 
-        char clock_str[6];
-        snprintf(clock_str, sizeof(clock_str), "%02d:%02d", hh, mm);
+        char clock_str[9];
+        if (clock_12h) {
+            const char *suffix = (hh >= 12) ? "p" : "a";
+            int h12 = hh % 12;
+            if (h12 == 0) h12 = 12;
+            snprintf(clock_str, sizeof(clock_str), "%d:%02d %s", h12, mm, suffix);
+        } else {
+            snprintf(clock_str, sizeof(clock_str), "%02d:%02d", hh, mm);
+        }
         lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, clock_str);
     } else if (text_buf[0] != '\0') {
         /* Text mode: default font */
@@ -168,8 +176,10 @@ static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *att
             unix_s = unix_s * 10 + (*p++ - '0');
         }
         if (unix_s > 0) {
-            clock_sync_unix_s   = unix_s;
+            clock_sync_unix_s    = unix_s;
             clock_sync_uptime_ms = k_uptime_get();
+            /* T:<secs>:A = 12h, T:<secs>:H = 24h (default) */
+            clock_12h = (*p == ':' && *(p + 1) == 'A');
         }
         text_buf[0] = '\0';  /* switch to clock display mode */
     }
