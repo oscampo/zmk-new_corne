@@ -93,12 +93,12 @@ static void draw_ble_canvas(void) {
         int hh = seconds_of_day / 3600;
         int mm = (seconds_of_day % 3600) / 60;
 
-        char clock_str[9];
+        char clock_str[8];
         if (clock_12h) {
             const char *suffix = (hh >= 12) ? "p" : "a";
             int h12 = hh % 12;
             if (h12 == 0) h12 = 12;
-            snprintf(clock_str, sizeof(clock_str), "%d:%02d %s", h12, mm, suffix);
+            snprintf(clock_str, sizeof(clock_str), "%02d:%02d%s", h12, mm, suffix);
         } else {
             snprintf(clock_str, sizeof(clock_str), "%02d:%02d", hh, mm);
         }
