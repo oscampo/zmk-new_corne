@@ -166,6 +166,23 @@ def _fmt_time(seconds: int) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+# FiraCode Nerd Font progress bar glyphs (U+EE00-EE05)
+_PB_LEFT  = ""   # [
+_PB_FILL  = ""   # filled segment
+_PB_EMPTY = ""   # empty segment
+_PB_RIGHT = ""   # ]
+
+# Pomodoro mode icons (Font Awesome, already in font)
+_ICON_WORK  = ""   # nf-fa-cog
+_ICON_BREAK = ""   # nf-fa-coffee
+_ICON_LONG  = ""   # nf-fa-hourglass
+
+
+def _pomo_bar(done: int, total: int) -> str:
+    """FiraCode progress bar: [████░░░░] style."""
+    return _PB_LEFT + _PB_FILL * done + _PB_EMPTY * (total - done) + _PB_RIGHT
+
+
 async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
                        long_brk: int, paired_windows: bool, debug: bool) -> None:
     """Run a full pomodoro session, updating the keyboard display each second."""
@@ -173,12 +190,14 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
     async def show(msg: str) -> None:
         await send_text(address, msg, paired_windows=paired_windows, debug=False)
 
-    async def countdown(label: str, minutes: int, cycle_info: str) -> None:
+    async def countdown(icon: str, minutes: int, cycle: int) -> None:
         total = minutes * 60
+        bar = _pomo_bar(cycle - 1, cycles)
         for remaining in range(total, -1, -1):
-            line = f"{label} {_fmt_time(remaining)}  {cycle_info}"
+            line = f"{icon} {_fmt_time(remaining)}\n{bar}"
             await show(line)
-            print(f"\r  {line}   ", end="", flush=True)
+            print(f"\r  {icon} {_fmt_time(remaining)}  {cycle}/{cycles}   ",
+                  end="", flush=True)
             if remaining:
                 await asyncio.sleep(1)
         print()
@@ -189,22 +208,20 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
 
     try:
         for cycle in range(1, cycles + 1):
-            info = f"{cycle}/{cycles}"
-
             # Work
-            print(f"[Ciclo {info}] TRABAJO")
-            await countdown("TRABAJO", work, info)
+            print(f"[Ciclo {cycle}/{cycles}] TRABAJO")
+            await countdown(_ICON_WORK, work, cycle)
 
-            # Short break (skip after last cycle if long break follows)
+            # Break
             is_last = cycle == cycles
             if is_last and long_brk:
-                print(f"[Ciclo {info}] PAUSA LARGA")
-                await countdown("PAUSA", long_brk, info)
+                print(f"[Ciclo {cycle}/{cycles}] PAUSA LARGA")
+                await countdown(_ICON_LONG, long_brk, cycle)
             else:
-                print(f"[Ciclo {info}] DESCANSO")
-                await countdown("DESCANSO", brk, info)
+                print(f"[Ciclo {cycle}/{cycles}] DESCANSO")
+                await countdown(_ICON_BREAK, brk, cycle)
 
-        await show("FIN Pomodoro!")
+        await show(f"{_ICON_WORK} Listo!\n{_pomo_bar(cycles, cycles)}")
         print("\n✓ Sesión completada.")
 
     except KeyboardInterrupt:
