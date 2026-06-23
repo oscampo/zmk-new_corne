@@ -37,9 +37,11 @@ Usage examples:
     python keyboard_display.py --pomodoro 30,10,3
 
     # NFL scores (current week)
-    python keyboard_display.py --nfl              # cycle through all games (5s each)
-    python keyboard_display.py --nfl KC           # show only Chiefs game
-    python keyboard_display.py --nfl KC --live   # refresh from API every 30s
+    python keyboard_display.py --nfl              # resultados última semana jugada
+    python keyboard_display.py --nfl KC           # solo Chiefs, última semana
+    python keyboard_display.py --nfl --next       # programación próxima semana
+    python keyboard_display.py --nfl KC --next    # próximo partido de KC
+    python keyboard_display.py --nfl KC --live    # marcadores en vivo, actualiza cada 30s
 """
 
 import asyncio
@@ -176,30 +178,30 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
 NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
 
-def _parse_espn_events(data: dict, team_filter: str) -> list[dict]:
-    """Parse ESPN scoreboard JSON into a list of game dicts."""
-    week_num = data.get("week", {}).get("number", "")
-    week = f"Wk{week_num}" if week_num else ""
+def _espn_get(url: str) -> dict:
+    with urllib.request.urlopen(url, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
 
+
+def _parse_games(data: dict, team_filter: str = "") -> list[dict]:
+    """Parse ESPN scoreboard JSON into game dicts."""
+    week_num = data.get("week", {}).get("number", "")
     games = []
     for event in data.get("events", []):
         comp = event.get("competitions", [{}])[0]
         competitors = comp.get("competitors", [])
         if len(competitors) < 2:
             continue
-
         teams = {}
         for c in competitors:
             side = c.get("homeAway", "home")
             teams[side] = {
-                "abbr": c.get("team", {}).get("abbreviation", "???").upper(),
+                "abbr":  c.get("team", {}).get("abbreviation", "???").upper(),
                 "score": c.get("score", ""),
             }
-
         away = teams.get("away", {})
         home = teams.get("home", {})
         status_type = comp.get("status", {}).get("type", {})
-
         games.append({
             "away":          away.get("abbr", "???"),
             "home":          home.get("abbr", "???"),
@@ -207,53 +209,80 @@ def _parse_espn_events(data: dict, team_filter: str) -> list[dict]:
             "home_score":    home.get("score", ""),
             "status_detail": status_type.get("shortDetail", ""),
             "status_state":  status_type.get("state", "pre"),
-            "week":          week,
+            "week":          f"Wk{week_num}" if week_num else "",
         })
-
     if team_filter:
         tf = team_filter.upper()
-        games = [g for g in games if tf == g["away"] or tf == g["home"]]
-
+        games = [g for g in games if tf in (g["away"], g["home"])]
     return games
 
 
-def fetch_nfl_games(team_filter: str = "") -> list[dict]:
-    """
-    Fetch NFL games from ESPN.  Prefers completed (post) games from the current
-    week; if none are completed yet, falls back to the previous week so the
-    display always shows the most recent results.
-    """
-    def _get(url: str) -> dict:
-        with urllib.request.urlopen(url, timeout=10) as r:
-            return json.loads(r.read().decode("utf-8"))
+def _week_url(season: int, seasontype: int, week: int) -> str:
+    return f"{NFL_SCOREBOARD_URL}?season={season}&seasontype={seasontype}&week={week}"
 
+
+def fetch_nfl_results(team_filter: str = "") -> list[dict]:
+    """
+    Last completed week: walks backwards from the current ESPN week until it
+    finds games in 'post' (Final) state.  Returns only those Final games.
+    """
     try:
-        data = _get(NFL_SCOREBOARD_URL)
+        data = _espn_get(NFL_SCOREBOARD_URL)
     except Exception as e:
         print(f"NFL API error: {e}")
         return []
 
-    games = _parse_espn_events(data, team_filter)
-    has_completed = any(g["status_state"] == "post" for g in games)
+    season     = data.get("season", {}).get("year", 2024) or 2024
+    week_num   = data.get("week",   {}).get("number", 18) or 18
+    seasontype = data.get("season", {}).get("type", 2)    or 2
 
-    # If no completed games this week, try the previous week
-    if not has_completed and not any(g["status_state"] == "in" for g in games):
+    for step in range(25):
         try:
-            season_year = data.get("season", {}).get("year", 2024)
-            week_num = data.get("week", {}).get("number", 1)
-            if week_num and week_num > 1:
-                prev_url = (
-                    f"{NFL_SCOREBOARD_URL}?seasontype=2"
-                    f"&season={season_year}&week={week_num - 1}"
-                )
-                prev_data = _get(prev_url)
-                prev_games = _parse_espn_events(prev_data, team_filter)
-                if prev_games:
-                    games = prev_games
+            if step == 0:
+                games = _parse_games(data, team_filter)
+            else:
+                wk, st, yr = week_num - step, seasontype, season
+                if wk < 1:          # roll into postseason of previous year
+                    yr -= 1; st = 3; wk = 5
+                games = _parse_games(_espn_get(_week_url(yr, st, wk)), team_filter)
+            final = [g for g in games if g["status_state"] == "post"]
+            if final:
+                return final
         except Exception:
-            pass
+            continue
+    return []
 
-    return games
+
+def fetch_nfl_schedule(team_filter: str = "") -> list[dict]:
+    """
+    Next upcoming week: walks forward from the current ESPN week until it
+    finds games in 'pre' (scheduled) state.
+    """
+    try:
+        data = _espn_get(NFL_SCOREBOARD_URL)
+    except Exception as e:
+        print(f"NFL API error: {e}")
+        return []
+
+    season     = data.get("season", {}).get("year", 2025) or 2025
+    week_num   = data.get("week",   {}).get("number", 1)  or 1
+    seasontype = data.get("season", {}).get("type", 2)    or 2
+
+    for step in range(10):
+        try:
+            if step == 0:
+                games = _parse_games(data, team_filter)
+            else:
+                games = _parse_games(
+                    _espn_get(_week_url(season, seasontype, week_num + step)),
+                    team_filter,
+                )
+            pre = [g for g in games if g["status_state"] == "pre"]
+            if pre:
+                return pre
+        except Exception:
+            continue
+    return []
 
 
 def format_nfl_game(game: dict) -> str:
@@ -299,21 +328,25 @@ def format_nfl_game(game: dict) -> str:
         return f"{line1}\n{date_str}\n{time_str}"
 
 
-async def run_nfl(address: str, team_filter: str, live: bool,
-                  paired_windows: bool, debug: bool) -> None:
+async def run_nfl(address: str, team_filter: str, next_week: bool,
+                  live: bool, paired_windows: bool, debug: bool) -> None:
     """
-    Cycle through NFL games on the keyboard display.
-    If team_filter is set, show only the matching game.
-    If live is True, refresh the API every 30 seconds.
+    Cycle through NFL games on the keyboard display (5s each).
+    next_week=True  → scheduled games for the next upcoming week
+    next_week=False → final results from the most recent played week
+    live=True       → re-fetch from ESPN every 30s (useful during game day)
     """
-    CYCLE_INTERVAL = 5      # seconds per game when cycling
-    LIVE_REFRESH   = 30     # seconds between API refreshes in live mode
+    CYCLE_INTERVAL = 5
+    LIVE_REFRESH   = 30
 
     async def show(text: str) -> None:
         await send_text(address, text, paired_windows=paired_windows, debug=debug)
 
-    print(f"NFL mode {'(live) ' if live else ''}{'— team: ' + team_filter if team_filter else '— all games'}")
-    print("Ctrl-C to exit.\n")
+    mode = "próxima semana" if next_week else "última semana jugada"
+    tf   = f" — equipo: {team_filter}" if team_filter else ""
+    print(f"NFL {mode}{tf}{'  (live)' if live else ''}\nCtrl-C para salir.\n")
+
+    fetch = fetch_nfl_schedule if next_week else fetch_nfl_results
 
     try:
         last_fetch = 0.0
@@ -322,35 +355,31 @@ async def run_nfl(address: str, team_filter: str, live: bool,
         while True:
             now = time.monotonic()
 
-            # Refresh from API if needed
             if not games or (live and now - last_fetch >= LIVE_REFRESH):
-                games = fetch_nfl_games(team_filter)
+                print("Consultando ESPN API...")
+                games = fetch(team_filter)
                 last_fetch = time.monotonic()
 
                 if not games:
-                    if team_filter:
-                        print(f"No games found for team '{team_filter}' this week.")
-                    else:
-                        print("No NFL games found for the current week.")
+                    msg = f"No se encontraron partidos para '{team_filter}'." if team_filter \
+                          else "No se encontraron partidos."
+                    print(msg)
                     await show("")
                     return
 
-            # Display each game
+                wk = games[0].get("week", "")
+                print(f"  {len(games)} partido(s) — {wk}\n")
+
             for game in games:
                 text = format_nfl_game(game)
-                print(f"Showing: {text!r}")
+                print(f"  {text!r}")
                 await show(text)
                 await asyncio.sleep(CYCLE_INTERVAL)
-
-                # In live mode, break out of the game loop after each cycle
-                # so we can refresh the API
                 if live:
-                    break  # re-enter outer loop to check refresh timer
+                    break
 
-            # Non-live, single-team: show once and exit
             if not live and team_filter:
                 break
-            # Non-live, all games: just cycled through all — loop again
             if not live:
                 continue
 
@@ -582,14 +611,17 @@ async def main():
     parser.add_argument(
         "--nfl", nargs="?", const="", metavar="TEAM",
         help=(
-            "Show NFL scores for the current week. "
-            "Optionally filter to a team abbreviation (e.g. --nfl KC). "
-            "Cycles through all matching games every 5 seconds."
+            "Resultados de la última semana jugada (todos o filtrado por equipo). "
+            "Ej: --nfl  |  --nfl KC"
         ),
     )
     parser.add_argument(
+        "--next", action="store_true",
+        help="Con --nfl: muestra la programación de la próxima semana en vez de resultados.",
+    )
+    parser.add_argument(
         "--live", action="store_true",
-        help="With --nfl: refresh scores from the ESPN API every 30 seconds.",
+        help="Con --nfl: actualiza los marcadores desde ESPN cada 30 segundos.",
     )
     parser.add_argument(
         "--clock", action="store_true",
@@ -638,7 +670,8 @@ async def main():
         print("✓ Reloj sincronizado. El display mostrará la hora.")
 
     elif args.nfl is not None:
-        await run_nfl(address, team_filter=args.nfl.strip(), live=args.live,
+        await run_nfl(address, team_filter=args.nfl.strip(),
+                      next_week=args.next, live=args.live,
                       paired_windows=paired_windows, debug=args.debug)
         # Restore clock after nfl mode
         await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
