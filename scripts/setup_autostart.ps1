@@ -33,8 +33,6 @@ $ScriptFile = 'keyboard_display.py'
 # ---------------------------------------------------------------------------
 # Resolve paths
 # ---------------------------------------------------------------------------
-# Use the directory that contains THIS .ps1 file as the working directory,
-# so the script works regardless of the caller's cwd.
 $ScriptsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $PyScript   = Join-Path $ScriptsDir $ScriptFile
 
@@ -48,9 +46,8 @@ if ($Uninstall) {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Task '$TaskName' removed successfully." -ForegroundColor Green
     } else {
-        # schtasks returns non-zero if the task does not exist
         if ($result -match 'cannot find') {
-            Write-Warning "Task '$TaskName' was not found — nothing to remove."
+            Write-Warning "Task '$TaskName' was not found - nothing to remove."
         } else {
             Write-Error "Failed to remove task.`n$result"
         }
@@ -62,27 +59,23 @@ if ($Uninstall) {
 # Install branch
 # ---------------------------------------------------------------------------
 
-# --- Verify keyboard_display.py exists ------------------------------------
+# --- Verify keyboard_display.py exists -------------------------------------
 if (-not (Test-Path $PyScript)) {
-    Write-Error "Cannot find '$ScriptFile' in '$ScriptsDir'.`nMake sure you are running this script from the correct location."
+    Write-Error "Cannot find '$ScriptFile' in '$ScriptsDir'. Make sure you are running this script from the correct location."
     exit 1
 }
 
-# --- Locate pythonw.exe ---------------------------------------------------
-# Prefer pythonw.exe (no console window) next to the python.exe on PATH.
+# --- Locate pythonw.exe ----------------------------------------------------
 function Find-Pythonw {
-    # 1. Ask where.exe for python, then swap python.exe -> pythonw.exe
     $wherePy = where.exe python 2>$null | Select-Object -First 1
     if ($wherePy -and (Test-Path $wherePy)) {
         $candidate = Join-Path (Split-Path $wherePy) 'pythonw.exe'
         if (Test-Path $candidate) { return $candidate }
     }
 
-    # 2. Try where.exe directly for pythonw
     $wherePyw = where.exe pythonw 2>$null | Select-Object -First 1
     if ($wherePyw -and (Test-Path $wherePyw)) { return $wherePyw }
 
-    # 3. Common install locations
     $guesses = @(
         "$env:LOCALAPPDATA\Programs\Python\Python*\pythonw.exe",
         "$env:ProgramFiles\Python*\pythonw.exe",
@@ -100,23 +93,16 @@ function Find-Pythonw {
 
 $PythonW = Find-Pythonw
 if (-not $PythonW) {
-    Write-Error "Could not locate pythonw.exe.`nInstall Python and make sure it is on your PATH, then re-run this script."
+    Write-Error "Could not locate pythonw.exe. Install Python and make sure it is on your PATH, then re-run this script."
     exit 1
 }
 Write-Host "Using Python:  $PythonW" -ForegroundColor DarkGray
 Write-Host "Script dir:    $ScriptsDir" -ForegroundColor DarkGray
 
-# --- Current user ---------------------------------------------------------
+# --- Current user ----------------------------------------------------------
 $CurrentUser = "$env:USERDOMAIN\$env:USERNAME"
 
-# --- Build the schtasks XML -----------------------------------------------
-# Using an XML task definition gives us full control over all fields
-# (especially StartWhenAvailable and the working directory) without
-# requiring the ScheduledTasks PowerShell module (Win8+/Server 2012+).
-#
-# The XML is written to a temp file, imported via schtasks /Create /XML,
-# then deleted.
-
+# --- Build the schtasks XML ------------------------------------------------
 $XmlContent = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -166,15 +152,14 @@ $XmlContent = @"
 "@
 
 # Write XML to a temp file (schtasks /XML requires a real file path)
-$TempXml = Join-Path $env:TEMP ("EyelashCorne_task_{0}.xml" -f [System.IO.Path]::GetRandomFileName())
+$rand = [System.IO.Path]::GetRandomFileName()
+$TempXml = Join-Path $env:TEMP "EyelashCorne_task_$rand.xml"
 try {
-    # Task Scheduler expects UTF-16 LE with BOM when the xml declares UTF-16
-    $Encoding = New-Object System.Text.UnicodeEncoding $false, $true  # LE, BOM
+    $Encoding = New-Object System.Text.UnicodeEncoding $false, $true
     [System.IO.File]::WriteAllText($TempXml, $XmlContent, $Encoding)
 
     Write-Host "Registering scheduled task '$TaskName'..." -ForegroundColor Cyan
 
-    # /F forces overwrite if the task already exists
     $result = schtasks.exe /Create /TN $TaskName /XML $TempXml /F 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host ""
@@ -187,11 +172,10 @@ try {
         Write-Host "To test immediately:  schtasks /Run /TN `"$TaskName`"" -ForegroundColor DarkGray
         Write-Host "To remove:            .\setup_autostart.ps1 -Uninstall" -ForegroundColor DarkGray
     } else {
-        Write-Error "schtasks reported an error:`n$result"
+        Write-Error "schtasks reported an error: $result"
         exit 1
     }
 } finally {
-    # Clean up temp XML regardless of success/failure
     if (Test-Path $TempXml) {
         Remove-Item $TempXml -Force -ErrorAction SilentlyContinue
     }
