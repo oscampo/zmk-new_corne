@@ -557,7 +557,7 @@ def fetch_weather(city: str = "") -> dict:
 
 
 async def run_weather(address: str, city: str, paired_windows: bool,
-                      debug: bool) -> None:
+                      debug: bool, right_address: str = "") -> None:
     imperial = _detect_imperial()
     print("Obteniendo clima...", end=" ", flush=True)
     try:
@@ -574,10 +574,17 @@ async def run_weather(address: str, city: str, paired_windows: bool,
     icon  = _wmo_icon(data['wmo'])
     label = _wmo_label(data['wmo'])
     city  = data['city'][:12]
-    display = f"{city}\n{temp_str}\n{label}\x01{icon}"
     print(f"{city}: {icon} {temp_str}, {label}")
 
-    await send_text(address, display, paired_windows=paired_windows, debug=debug)
+    # Left side: two-column format (text strip)
+    display_left = f"{city}\n{temp_str}\n{label}\x01{icon}"
+    await send_text(address, display_left, paired_windows=paired_windows, debug=debug)
+
+    # Right side: full-screen weather format (W: prefix)
+    if right_address:
+        display_right = f"W:{city}\n{temp_str}\n{label}\x01{icon}"
+        await send_text(right_address, display_right, debug=debug)
+
     print("Mostrando 10s... ", end="", flush=True)
     await asyncio.sleep(10)
     print("listo.")
@@ -826,6 +833,10 @@ async def main():
         "--weather", nargs="?", const="", metavar="CITY",
         help="Mostrar el clima actual (ciudad opcional; auto-detecta por IP si se omite).",
     )
+    parser.add_argument(
+        "--right", metavar="ADDR",
+        help="Dirección BLE del display derecho (para reloj+clima en pantalla completa).",
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
@@ -863,6 +874,8 @@ async def main():
     # ── Sync clock on every connection (enables clock mode as default) ────────
     if not args.clear:  # --clear explicitly clears; all other modes sync first
         await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
+        if getattr(args, "right", None):
+            await sync_clock(args.right, paired_windows=False, debug=args.debug)
 
     # ── Dispatch ──────────────────────────────────────────────────────────────
     if args.clock:
@@ -877,7 +890,8 @@ async def main():
 
     elif args.weather is not None:
         await run_weather(address, city=args.weather,
-                          paired_windows=paired_windows, debug=args.debug)
+                          paired_windows=paired_windows, debug=args.debug,
+                          right_address=getattr(args, "right", "") or "")
 
     elif args.pomodoro is not None:
         try:
