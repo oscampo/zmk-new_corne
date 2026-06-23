@@ -28,6 +28,9 @@ static int64_t current_unix_seconds(void) {
     return clock_sync_unix_s + elapsed_ms / 1000;
 }
 
+LV_FONT_DECLARE(mono_16);
+LV_FONT_DECLARE(mono_8);
+
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
 /*
@@ -79,9 +82,6 @@ static void draw_ble_canvas(void) {
     lv_draw_label_dsc_t dsc;
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
-
-    LV_FONT_DECLARE(mono_16);
-    LV_FONT_DECLARE(mono_8);
 
     bool show_clock = (text_buf[0] == '\0' && clock_sync_unix_s != 0);
 
