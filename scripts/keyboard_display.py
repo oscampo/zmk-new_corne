@@ -50,6 +50,7 @@ import sys
 import time
 import json
 import urllib.request
+import urllib.parse
 from datetime import timezone, datetime
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
@@ -385,6 +386,108 @@ async def run_nfl(address: str, team_filter: str, next_week: bool,
         print("\nNFL mode stopped.")
     finally:
         await show("")
+
+
+# WMO weather code ranges → short display label
+_WMO_CONDITIONS = [
+    (range(0,   1),  "Clear"),
+    (range(1,   2),  "PCloudy"),
+    (range(2,   3),  "Cloudy"),
+    (range(3,   4),  "Ovrcast"),
+    (range(45,  49), "Fog"),
+    (range(51,  68), "Rain"),
+    (range(71,  78), "Snow"),
+    (range(80,  83), "Shwrs"),
+    (range(85,  87), "Snwrs"),
+    (range(95,  96), "Storm"),
+    (range(96, 100), "HvyStrm"),
+]
+
+
+def _wmo_label(code: int) -> str:
+    for r, label in _WMO_CONDITIONS:
+        if code in r:
+            return label
+    return f"WMO{code}"
+
+
+def _detect_imperial() -> bool:
+    try:
+        import platform
+        if platform.system() == "Windows":
+            import winreg  # type: ignore
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Control Panel\International")
+            imeasure = winreg.QueryValueEx(key, "iMeasure")[0]
+            winreg.CloseKey(key)
+            return str(imeasure) == "1"
+    except Exception:
+        pass
+    return False
+
+
+def fetch_weather(city: str = "") -> dict:
+    """
+    Returns {"city": str, "temp_c": float, "temp_f": float, "wmo": int}.
+    If city is empty, auto-detects location via ipapi.co.
+    """
+    def _get(url: str) -> dict:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    if city:
+        geo = _get(
+            "https://geocoding-api.open-meteo.com/v1/search"
+            f"?name={urllib.parse.quote(city)}&count=1&language=en&format=json"
+        )
+        results = geo.get("results")
+        if not results:
+            raise ValueError(f"City not found: {city!r}")
+        r0 = results[0]
+        lat, lon, name = r0["latitude"], r0["longitude"], r0.get("name", city)
+    else:
+        loc = _get("https://ipapi.co/json/")
+        lat = loc["latitude"]
+        lon = loc["longitude"]
+        name = loc.get("city", "?")
+
+    wx = _get(
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current_weather=true&temperature_unit=celsius"
+    )
+    cw = wx["current_weather"]
+    temp_c = cw["temperature"]
+    return {
+        "city":   name,
+        "temp_c": temp_c,
+        "temp_f": temp_c * 9 / 5 + 32,
+        "wmo":    int(cw["weathercode"]),
+    }
+
+
+async def run_weather(address: str, city: str, paired_windows: bool,
+                      debug: bool) -> None:
+    imperial = _detect_imperial()
+    print("Obteniendo clima...", end=" ", flush=True)
+    try:
+        data = fetch_weather(city)
+    except Exception as e:
+        print(f"Error: {e}")
+        return
+
+    if imperial:
+        temp_str = f"{data['temp_f']:.0f}F"
+    else:
+        temp_str = f"{data['temp_c']:.0f}C"
+
+    display = f"{data['city'][:12]}\n{temp_str}\n{_wmo_label(data['wmo'])}"
+    print(f"{data['city']}: {temp_str}, {_wmo_label(data['wmo'])}")
+
+    await send_text(address, display, paired_windows=paired_windows, debug=debug)
+    print("Mostrando 10s... ", end="", flush=True)
+    await asyncio.sleep(10)
+    print("listo.")
 
 
 def _mac_to_int(mac: str) -> int:
