@@ -30,6 +30,7 @@ static int64_t current_unix_seconds(void) {
 
 LV_FONT_DECLARE(mono_16);
 LV_FONT_DECLARE(mono_8);
+LV_FONT_DECLARE(mono_icon);
 
 /* ── Canvas overlay ───────────────────────────────────────────────────────── */
 
@@ -117,13 +118,13 @@ static void draw_ble_canvas(void) {
             if (n > TEXT_MAX_LEN) n = TEXT_MAX_LEN;
             memcpy(left, text_buf, n);
             left[n] = '\0';
-            lv_canvas_draw_text(ble_canvas, 0, 0, 48, &dsc, left);
+            lv_canvas_draw_text(ble_canvas, 0, 0, 36, &dsc, left);
 
             lv_draw_label_dsc_t dsc2;
             lv_draw_label_dsc_init(&dsc2);
             dsc2.color = lv_color_white();
-            dsc2.font  = &mono_16;
-            lv_canvas_draw_text(ble_canvas, 50, 11, 18, &dsc2, sep + 1);
+            dsc2.font  = &mono_icon;
+            lv_canvas_draw_text(ble_canvas, 38, 6, 30, &dsc2, sep + 1);
         } else {
             lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
         }

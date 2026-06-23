@@ -186,15 +186,18 @@ _ICON_BREAK = ""   # nf-fa-coffee
 _ICON_LONG  = ""   # nf-fa-hourglass
 
 
+_PB_END_EMPTY = "\uee02"  # U+EE02 right-bracket empty
+
 def _pomo_bar(done: int, total: int) -> str:
     """FiraCode progress bar using positional glyphs: first/mid/last filled, empty."""
     segs = []
     for i in range(total):
+        is_last = (i == total - 1)
         if i >= done:
-            segs.append(_PB_EMPTY)
+            segs.append(_PB_END_EMPTY if is_last else _PB_EMPTY)
         elif i == 0:
             segs.append(_PB_FIRST)
-        elif i == total - 1:
+        elif is_last:
             segs.append(_PB_LAST)
         else:
             segs.append(_PB_MID)
@@ -570,7 +573,7 @@ async def run_weather(address: str, city: str, paired_windows: bool,
     icon  = _wmo_icon(data['wmo'])
     label = _wmo_label(data['wmo'])
     city  = data['city'][:12]
-    display = f"{city}\n{icon} {temp_str}\n{label}\x01{icon}"
+    display = f"{city}\n{temp_str}\n{label}\x01{icon}"
     print(f"{city}: {icon} {temp_str}, {label}")
 
     await send_text(address, display, paired_windows=paired_windows, debug=debug)
