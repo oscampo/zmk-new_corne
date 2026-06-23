@@ -4,11 +4,7 @@
  * Opts: --font fonts/FiraCodeNerdFontMono-Regular.ttf --size 10 --bpp 1 --output mono_8.c --format lvgl -r 0x20-0x7F -r 0xA1-0xFF -r 0xE0A0-0xE0D4 -r 0xE200-0xE2A9 -r 0xE300-0xE3FF -r 0xF000-0xF2E0 -r 0xEE00-0xEE0F --no-compress --lv-font-name mono_8
  ******************************************************************************/
 
-#ifdef LV_LVGL_H_INCLUDE_SIMPLE
-#include "lvgl.h"
-#else
-#include "lvgl/lvgl.h"
-#endif
+#include <lvgl.h>
 
 #ifndef MONO_8
 #define MONO_8 1
