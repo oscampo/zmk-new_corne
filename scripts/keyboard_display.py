@@ -51,9 +51,33 @@ import time
 import json
 import urllib.request
 import urllib.parse
+import unicodedata
 from datetime import timezone, datetime
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
+
+
+_EXTRA_MAP = str.maketrans({
+    "ñ": "n", "Ñ": "N",
+    "ç": "c", "Ç": "C",
+    "ß": "ss",
+    "æ": "ae", "Æ": "AE",
+    "œ": "oe", "Œ": "OE",
+    "ø": "o", "Ø": "O",
+    "ð": "d", "Þ": "th",
+})
+
+
+def to_display(text: str) -> str:
+    """
+    Convert text to ASCII-safe for the LVGL font (which only contains
+    Basic Latin). Strips diacritics via NFD decomposition and maps a few
+    characters that don't decompose cleanly (ñ, ç, ß, etc.).
+    """
+    text = text.translate(_EXTRA_MAP)
+    nfd = unicodedata.normalize("NFD", text)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn"
+                   and ord(c) < 128)
 
 
 def _detect_time_format() -> tuple[int, bool]:
@@ -652,6 +676,7 @@ async def sync_clock(address: str, paired_windows: bool, debug: bool) -> None:
 async def send_text(address: str, text: str, paired_windows: bool = False,
                     debug: bool = False) -> bool:
     """Connect to the keyboard and write text to the display characteristic."""
+    text = to_display(text)
     if paired_windows:
         return await send_text_winrt(address, text, debug=debug)
 
