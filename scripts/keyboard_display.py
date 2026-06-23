@@ -625,6 +625,10 @@ async def main():
         "--clock", action="store_true",
         help="Sincronizar hora y cambiar el display a modo reloj.",
     )
+    parser.add_argument(
+        "--weather", nargs="?", const="", metavar="CITY",
+        help="Mostrar el clima actual (ciudad opcional; auto-detecta por IP si se omite).",
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
@@ -674,6 +678,10 @@ async def main():
         # Restore clock after nfl mode
         await sync_clock(address, paired_windows=paired_windows, debug=args.debug)
 
+    elif args.weather is not None:
+        await run_weather(address, city=args.weather,
+                          paired_windows=paired_windows, debug=args.debug)
+
     elif args.pomodoro is not None:
         try:
             work, brk, cycles, long_brk = parse_pomodoro(args.pomodoro)
@@ -702,7 +710,7 @@ async def main():
         await send_text(address, args.text, paired_windows=paired_windows,
                         debug=args.debug)
 
-    elif not args.clock:
+    elif not args.clock and args.weather is None:
         parser.print_help()
 
 
