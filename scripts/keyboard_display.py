@@ -57,27 +57,39 @@ from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
 
+# Characters the firmware fonts support natively (Basic Latin + Latin-1 Supplement).
+# Anything outside this range gets stripped/transliterated as fallback.
+_FONT_RANGES = [(0x20, 0x7F), (0xA1, 0xFF)]
+
+# Multi-char mappings for chars that don't decompose to Latin-1 cleanly.
 _EXTRA_MAP = str.maketrans({
-    "ñ": "n", "Ñ": "N",
-    "ç": "c", "Ç": "C",
     "ß": "ss",
     "æ": "ae", "Æ": "AE",
     "œ": "oe", "Œ": "OE",
-    "ø": "o", "Ø": "O",
-    "ð": "d", "Þ": "th",
 })
 
 
 def to_display(text: str) -> str:
     """
-    Convert text to ASCII-safe for the LVGL font (which only contains
-    Basic Latin). Strips diacritics via NFD decomposition and maps a few
-    characters that don't decompose cleanly (ñ, ç, ß, etc.).
+    Prepare text for the keyboard display.
+    Characters in Basic Latin (0x20-0x7F) and Latin-1 Supplement (0xA1-0xFF)
+    pass through unchanged — the firmware font (JetBrains Mono) covers them.
+    Anything else is stripped via NFD diacritic removal or the fallback map.
     """
     text = text.translate(_EXTRA_MAP)
-    nfd = unicodedata.normalize("NFD", text)
-    return "".join(c for c in nfd if unicodedata.category(c) != "Mn"
-                   and ord(c) < 128)
+    result = []
+    for ch in text:
+        cp = ord(ch)
+        if any(lo <= cp <= hi for lo, hi in _FONT_RANGES) or ch in "\n\r":
+            result.append(ch)
+        else:
+            # Try NFD decomposition: strip combining marks, keep base if in range
+            nfd = unicodedata.normalize("NFD", ch)
+            base = nfd[0]
+            if any(lo <= ord(base) <= hi for lo, hi in _FONT_RANGES):
+                result.append(base)
+            # else: drop the character
+    return "".join(result)
 
 
 def _detect_time_format() -> tuple[int, bool]:

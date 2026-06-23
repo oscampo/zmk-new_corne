@@ -80,11 +80,13 @@ static void draw_ble_canvas(void) {
     lv_draw_label_dsc_init(&dsc);
     dsc.color = lv_color_white();
 
+    LV_FONT_DECLARE(mono_16);
+    LV_FONT_DECLARE(mono_8);
+
     bool show_clock = (text_buf[0] == '\0' && clock_sync_unix_s != 0);
 
     if (show_clock) {
-        /* Large font clock: HH:MM centered on the canvas */
-        dsc.font = &lv_font_montserrat_20;
+        dsc.font = &mono_16;
 
         int64_t t = current_unix_seconds();
         int seconds_of_day = (int)(t % 86400);
@@ -102,7 +104,7 @@ static void draw_ble_canvas(void) {
         }
         lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, clock_str);
     } else if (text_buf[0] != '\0') {
-        /* Text mode: default font */
+        dsc.font = &mono_8;
         lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
     }
     /* else: no sync yet, show nothing */
