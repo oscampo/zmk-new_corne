@@ -57,9 +57,17 @@ from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
 
-# Characters the firmware fonts support natively (Basic Latin + Latin-1 Supplement).
-# Anything outside this range gets stripped/transliterated as fallback.
-_FONT_RANGES = [(0x20, 0x7F), (0xA1, 0xFF)]
+# Characters the firmware fonts support natively (Basic Latin + Latin-1 Supplement
+# + Nerd Font icon ranges included in mono_16/mono_8).
+_FONT_RANGES = [
+    (0x20,   0x7F),   # Basic Latin
+    (0xA1,   0xFF),   # Latin-1 Supplement
+    (0xE0A0, 0xE0D4), # Powerline
+    (0xE200, 0xE2A9), # FA Extension
+    (0xE300, 0xE3FF), # Weather icons
+    (0xEE00, 0xEE0F), # FiraCode progress bar
+    (0xF000, 0xF2E0), # Font Awesome
+]
 
 # Multi-char mappings for chars that don't decompose to Latin-1 cleanly.
 _EXTRA_MAP = str.maketrans({
@@ -339,47 +347,54 @@ def fetch_nfl_schedule(team_filter: str = "") -> list[dict]:
     return []
 
 
-def format_nfl_game(game: dict) -> str:
+_NFL_TROPHY  = ""  # nf-fa-trophy
+_NFL_BOLT    = ""  # nf-fa-bolt  (live)
+
+def format_nfl_game(game: dict, live: bool = False) -> str:
     """
-    Format a game for the keyboard display (2 lines, ~12 chars each):
-      GB vs MIN
-        9-13
-    For live games the second line shows the current status.
+    Final:
+      GB  MIN
+      29  13
+       Final
+
+    Live (--live):
+      ⚡GB-MIN
+      Q3 2:41
+       9-13
+
+    Pre-game:
+      GB  MIN
+      9/13
+      4:25p
     """
     away  = game["away"]
     home  = game["home"]
     state = game["status_state"]
 
-    line1 = f"{away}-{home}"
-
-    if state == "post" and game["away_score"] and game["home_score"]:
-        # Final result: 3 lines — matchup / score / Final
-        line2 = f"{game['away_score']}-{game['home_score']}"
-        return f"{line1}\n{line2}\nFinal"
+    if state == "post" and game["away_score"] is not None:
+        # Final: teams / scores / trophy+Final
+        teams  = f"{away}  {home}"
+        scores = f"{game['away_score']}  {game['home_score']}"
+        return f"{teams}\n{scores}\n{_NFL_TROPHY} Final"
 
     elif state == "in":
-        # Live: matchup / score / quarter+time
-        score = f"{game['away_score']}-{game['home_score']}"
-        detail = game["status_detail"][:10]
-        return f"{line1}\n{score}\n{detail}"
+        # Live: bolt+matchup / quarter+clock / score
+        detail = game["status_detail"]  # e.g. "Q3 2:41"
+        score  = f"{game['away_score']}-{game['home_score']}"
+        return f"{_NFL_BOLT}{away}-{home}\n{detail[:8]}\n {score}"
 
     else:
-        # Pre-game: parse ESPN detail "9/13 - 4:25 PM ET" → date + time
-        detail = game["status_detail"]  # e.g. "9/13 - 4:25 PM ET"
-        parts = detail.split(" - ", 1)
-        date_str = parts[0].strip() if parts else detail[:5]
-        time_str = ""
+        # Pre-game
+        detail = game["status_detail"]  # "9/13 - 4:25 PM ET"
+        parts  = detail.split(" - ", 1)
+        date_s = parts[0].strip() if parts else detail[:5]
+        time_s = ""
         if len(parts) > 1:
-            # "4:25 PM ET" → "4:25p"
-            t = parts[1].strip()
-            t_parts = t.split()
-            if len(t_parts) >= 2:
-                hhmm = t_parts[0]
-                ampm = t_parts[1][0].lower()  # "P" or "A" → "p" or "a"
-                time_str = f"{hhmm}{ampm}"
-            else:
-                time_str = t[:8]
-        return f"{line1}\n{date_str}\n{time_str}"
+            t = parts[1].strip().split()
+            if len(t) >= 2:
+                time_s = f"{t[0]}{t[1][0].lower()}"
+        teams = f"{away}  {home}"
+        return f"{teams}\n{date_s}\n{time_s}"
 
 
 async def run_nfl(address: str, team_filter: str, next_week: bool,
@@ -425,7 +440,7 @@ async def run_nfl(address: str, team_filter: str, next_week: bool,
                 print(f"  {len(games)} partido(s) — {wk}\n")
 
             for game in games:
-                text = format_nfl_game(game)
+                text = format_nfl_game(game, live=live)
                 print(f"  {text!r}")
                 await show(text)
                 await asyncio.sleep(CYCLE_INTERVAL)
@@ -442,23 +457,31 @@ async def run_nfl(address: str, team_filter: str, next_week: bool,
 
 
 # WMO weather code ranges → short display label
+# (range, icon U+E3xx NF weather, label)
 _WMO_CONDITIONS = [
-    (range(0,   1),  "Clear"),
-    (range(1,   2),  "PCloudy"),
-    (range(2,   3),  "Cloudy"),
-    (range(3,   4),  "Ovrcast"),
-    (range(45,  49), "Fog"),
-    (range(51,  68), "Rain"),
-    (range(71,  78), "Snow"),
-    (range(80,  83), "Shwrs"),
-    (range(85,  87), "Snwrs"),
-    (range(95,  96), "Storm"),
-    (range(96, 100), "HvyStrm"),
+    (range(0,   1),  "", "Sunny"),
+    (range(1,   2),  "", "PCloudy"),
+    (range(2,   3),  "", "Cloudy"),
+    (range(3,   4),  "", "Overcast"),
+    (range(45,  49), "", "Fog"),
+    (range(51,  68), "", "Rain"),
+    (range(71,  78), "", "Snow"),
+    (range(80,  83), "", "Showers"),
+    (range(85,  87), "", "Snowshwrs"),
+    (range(95,  96), "", "Storm"),
+    (range(96, 100), "", "HvyStorm"),
 ]
 
 
+def _wmo_icon(code: int) -> str:
+    for r, icon, _ in _WMO_CONDITIONS:
+        if code in r:
+            return icon
+    return ""
+
+
 def _wmo_label(code: int) -> str:
-    for r, label in _WMO_CONDITIONS:
+    for r, _, label in _WMO_CONDITIONS:
         if code in r:
             return label
     return f"WMO{code}"
@@ -530,12 +553,15 @@ async def run_weather(address: str, city: str, paired_windows: bool,
         return
 
     if imperial:
-        temp_str = f"{data['temp_f']:.0f}F"
+        temp_str = f"{data['temp_f']:.0f}°F"
     else:
-        temp_str = f"{data['temp_c']:.0f}C"
+        temp_str = f"{data['temp_c']:.0f}°C"
 
-    display = f"{data['city'][:12]}\n{temp_str}\n{_wmo_label(data['wmo'])}"
-    print(f"{data['city']}: {temp_str}, {_wmo_label(data['wmo'])}")
+    icon  = _wmo_icon(data['wmo'])
+    label = _wmo_label(data['wmo'])
+    city  = data['city'][:12]
+    display = f"{city}\n{icon} {temp_str}\n{label}"
+    print(f"{city}: {icon} {temp_str}, {label}")
 
     await send_text(address, display, paired_windows=paired_windows, debug=debug)
     print("Mostrando 10s... ", end="", flush=True)

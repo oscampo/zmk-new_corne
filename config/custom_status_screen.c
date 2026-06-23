@@ -102,7 +102,7 @@ static void draw_ble_canvas(void) {
         } else {
             snprintf(clock_str, sizeof(clock_str), "%02d:%02d", hh, mm);
         }
-        lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, clock_str);
+        lv_canvas_draw_text(ble_canvas, 0, 12, CANVAS_SIZE, &dsc, clock_str);
     } else if (text_buf[0] != '\0') {
         dsc.font = &mono_8;
         lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
