@@ -32,12 +32,19 @@ Usage examples:
     # Pomodoro timer (custom: work,break,cycles[,long_break])
     python keyboard_display.py --pomodoro 25,5,4,15
     python keyboard_display.py --pomodoro 30,10,3
+
+    # NFL scores (current week)
+    python keyboard_display.py --nfl              # cycle through all games (5s each)
+    python keyboard_display.py --nfl KC           # show only Chiefs game
+    python keyboard_display.py --nfl KC --live   # refresh from API every 30s
 """
 
 import asyncio
 import argparse
 import sys
 import time
+import json
+import urllib.request
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
@@ -131,6 +138,154 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
     except KeyboardInterrupt:
         await show("")
         print("\nPomodoro cancelado.")
+
+
+NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+
+
+def fetch_nfl_games(team_filter: str = "") -> list[dict]:
+    """
+    Fetch current week's NFL games from the ESPN public API.
+    Returns a list of dicts with keys: away, home, away_score, home_score,
+    status_detail, status_state, week.
+    Optionally filters to games where either team abbreviation matches team_filter.
+    """
+    try:
+        with urllib.request.urlopen(NFL_SCOREBOARD_URL, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"NFL API error: {e}")
+        return []
+
+    week = ""
+    season_type = data.get("season", {}).get("type", {})
+    week_num = data.get("week", {}).get("number", "")
+    if week_num:
+        week = f"Wk{week_num}"
+
+    games = []
+    for event in data.get("events", []):
+        comp = event.get("competitions", [{}])[0]
+        competitors = comp.get("competitors", [])
+        if len(competitors) < 2:
+            continue
+
+        # ESPN returns home/away via homeAway field
+        teams = {}
+        for c in competitors:
+            side = c.get("homeAway", "home")
+            teams[side] = {
+                "abbr": c.get("team", {}).get("abbreviation", "???").upper(),
+                "score": c.get("score", ""),
+            }
+
+        away = teams.get("away", {})
+        home = teams.get("home", {})
+
+        status = comp.get("status", {})
+        status_type = status.get("type", {})
+        status_detail = status_type.get("shortDetail", status_type.get("detail", ""))
+        status_state = status_type.get("state", "pre")  # pre / in / post
+
+        game = {
+            "away": away.get("abbr", "???"),
+            "home": home.get("abbr", "???"),
+            "away_score": away.get("score", ""),
+            "home_score": home.get("score", ""),
+            "status_detail": status_detail,
+            "status_state": status_state,
+            "week": week,
+        }
+        games.append(game)
+
+    if team_filter:
+        tf = team_filter.upper()
+        games = [g for g in games if tf == g["away"] or tf == g["home"]]
+
+    return games
+
+
+def format_nfl_game(game: dict) -> str:
+    """
+    Format a game dict into a 3-line string for the keyboard display (~25 chars/line).
+    Line 1: score or matchup
+    Line 2: game status
+    Line 3: week
+    """
+    away = game["away"]
+    home = game["home"]
+    state = game["status_state"]
+
+    if state in ("in", "post") and game["away_score"] != "" and game["home_score"] != "":
+        line1 = f"{away} {game['away_score']} {home} {game['home_score']}"
+    else:
+        line1 = f"{away}  vs  {home}"
+
+    line2 = game["status_detail"][:25]
+    line3 = game["week"]
+
+    return f"{line1}\n{line2}\n{line3}"
+
+
+async def run_nfl(address: str, team_filter: str, live: bool,
+                  paired_windows: bool, debug: bool) -> None:
+    """
+    Cycle through NFL games on the keyboard display.
+    If team_filter is set, show only the matching game.
+    If live is True, refresh the API every 30 seconds.
+    """
+    CYCLE_INTERVAL = 5      # seconds per game when cycling
+    LIVE_REFRESH   = 30     # seconds between API refreshes in live mode
+
+    async def show(text: str) -> None:
+        await send_text(address, text, paired_windows=paired_windows, debug=debug)
+
+    print(f"NFL mode {'(live) ' if live else ''}{'— team: ' + team_filter if team_filter else '— all games'}")
+    print("Ctrl-C to exit.\n")
+
+    try:
+        last_fetch = 0.0
+        games: list[dict] = []
+
+        while True:
+            now = time.monotonic()
+
+            # Refresh from API if needed
+            if not games or (live and now - last_fetch >= LIVE_REFRESH):
+                games = fetch_nfl_games(team_filter)
+                last_fetch = time.monotonic()
+
+                if not games:
+                    if team_filter:
+                        print(f"No games found for team '{team_filter}' this week.")
+                    else:
+                        print("No NFL games found for the current week.")
+                    await show("")
+                    return
+
+            # Display each game
+            for game in games:
+                text = format_nfl_game(game)
+                print(f"Showing: {text!r}")
+                await show(text)
+                await asyncio.sleep(CYCLE_INTERVAL)
+
+                # In live mode, break out of the game loop after each cycle
+                # so we can refresh the API
+                if live:
+                    break  # re-enter outer loop to check refresh timer
+
+            # Non-live, single-team: show once and exit
+            if not live and team_filter:
+                break
+            # Non-live, all games: just cycled through all — loop again
+            if not live:
+                continue
+
+    except KeyboardInterrupt:
+        print("\nNFL mode stopped.")
+    finally:
+        await show("")
 
 
 def _mac_to_int(mac: str) -> int:
@@ -334,6 +489,18 @@ async def main():
             "Custom: trabajo,descanso,ciclos[,pausa_larga]  ej: 25,5,4,15"
         ),
     )
+    parser.add_argument(
+        "--nfl", nargs="?", const="", metavar="TEAM",
+        help=(
+            "Show NFL scores for the current week. "
+            "Optionally filter to a team abbreviation (e.g. --nfl KC). "
+            "Cycles through all matching games every 5 seconds."
+        ),
+    )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="With --nfl: refresh scores from the ESPN API every 30 seconds.",
+    )
     args = parser.parse_args()
 
     # ── Resolve keyboard address ──────────────────────────────────────────────
@@ -369,7 +536,11 @@ async def main():
         return
 
     # ── Dispatch ──────────────────────────────────────────────────────────────
-    if args.pomodoro is not None:
+    if args.nfl is not None:
+        await run_nfl(address, team_filter=args.nfl.strip(), live=args.live,
+                      paired_windows=paired_windows, debug=args.debug)
+
+    elif args.pomodoro is not None:
         try:
             work, brk, cycles, long_brk = parse_pomodoro(args.pomodoro)
         except argparse.ArgumentTypeError as e:
