@@ -272,16 +272,30 @@ static void ensure_overlay_timer_cb(lv_timer_t *timer) {
     draw_ble_canvas();
 }
 
-/* Re-advertise after peripheral connects to central so Python can also connect */
+/* Re-advertise so Python can connect while right side is connected to central */
+static void kbd_right_start_adv(struct k_work *w);
+static K_WORK_DELAYABLE_DEFINE(kbd_right_adv_work, kbd_right_start_adv);
+
+static void kbd_right_start_adv(struct k_work *w) {
+    static const struct bt_le_adv_param param = BT_LE_ADV_PARAM_INIT(
+        BT_LE_ADV_OPT_CONNECTABLE,
+        BT_GAP_ADV_FAST_INT_MIN_2,
+        BT_GAP_ADV_FAST_INT_MAX_2,
+        NULL);
+    static const struct bt_data ad[] = {
+        BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
+        BT_DATA(BT_DATA_NAME_COMPLETE, "Eyelash Corne R", 15),
+    };
+    int err = bt_le_adv_start(&param, ad, ARRAY_SIZE(ad), NULL, 0);
+    if (err && err != -EALREADY) {
+        /* retry in 5s if not already advertising */
+        k_work_reschedule(&kbd_right_adv_work, K_SECONDS(5));
+    }
+}
+
 static void kbd_right_connected(struct bt_conn *conn, uint8_t err) {
     if (err) return;
-    static const struct bt_le_adv_param param = {
-        .options      = BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_USE_NAME,
-        .interval_min = BT_GAP_ADV_FAST_INT_MIN_2,
-        .interval_max = BT_GAP_ADV_FAST_INT_MAX_2,
-        .peer         = NULL,
-    };
-    bt_le_adv_start(&param, NULL, 0, NULL, 0);
+    k_work_reschedule(&kbd_right_adv_work, K_SECONDS(1));
 }
 
 BT_CONN_CB_DEFINE(kbd_right_conn_cb) = {
