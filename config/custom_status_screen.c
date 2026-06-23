@@ -292,6 +292,9 @@ BT_CONN_CB_DEFINE(kbd_right_conn_cb) = {
 
 /* ── BLE GATT service (shared) ──────────────────────────────────────────── */
 
+static void refresh_ble_canvas(struct k_work *work);
+static K_WORK_DEFINE(refresh_work, refresh_ble_canvas);
+
 static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *attr,
                             const void *buf, uint16_t len, uint16_t offset,
                             uint8_t flags) {
@@ -357,7 +360,6 @@ static ssize_t on_ble_write(struct bt_conn *conn, const struct bt_gatt_attr *att
 }
 
 static void refresh_ble_canvas(struct k_work *work) { draw_ble_canvas(); }
-static K_WORK_DEFINE(refresh_work, refresh_ble_canvas);
 
 #define KBD_DISPLAY_SVC_UUID \
     BT_UUID_DECLARE_128(BT_UUID_128_ENCODE(0x00001523, 0x1212, 0xefde, 0x1523, 0x785feabcd123ULL))
