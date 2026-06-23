@@ -108,8 +108,8 @@ static void draw_ble_canvas(void) {
         dsc.font = &mono_8;
 
         /* Two-column layout: "main text\x01large_icon"
-         * Left column (x=0..47): text in mono_8
-         * Right column (x=50..67): single icon in mono_16 (18px)
+         * Left column (x=0..41): text in mono_8  (~7 chars/line)
+         * Right column (x=44..67): single icon in mono_icon (30px)
          */
         char *sep = strchr(text_buf, '\x01');
         if (sep) {
@@ -118,13 +118,13 @@ static void draw_ble_canvas(void) {
             if (n > TEXT_MAX_LEN) n = TEXT_MAX_LEN;
             memcpy(left, text_buf, n);
             left[n] = '\0';
-            lv_canvas_draw_text(ble_canvas, 0, 0, 36, &dsc, left);
+            lv_canvas_draw_text(ble_canvas, 0, 0, 42, &dsc, left);
 
             lv_draw_label_dsc_t dsc2;
             lv_draw_label_dsc_init(&dsc2);
             dsc2.color = lv_color_white();
             dsc2.font  = &mono_icon;
-            lv_canvas_draw_text(ble_canvas, 38, 6, 30, &dsc2, sep + 1);
+            lv_canvas_draw_text(ble_canvas, 44, 6, 24, &dsc2, sep + 1);
         } else {
             lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
         }

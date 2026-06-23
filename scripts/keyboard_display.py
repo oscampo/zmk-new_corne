@@ -181,12 +181,13 @@ _PB_LAST  = ""   # U+EE05 right-end filled
 _PB_EMPTY = ""   # U+EE01 empty segment
 
 # Pomodoro mode icons (Font Awesome, already in font)
-_ICON_WORK  = ""   # nf-fa-cog
+_ICON_WORK  = ""   # nf-fa-gavel (hammer/mallet)
 _ICON_BREAK = ""   # nf-fa-coffee
 _ICON_LONG  = ""   # nf-fa-hourglass
 
 
-_PB_END_EMPTY = "\uee02"  # U+EE02 right-bracket empty
+_PB_FIRST_EMPTY = "\uee00"  # U+EE00 left-bracket empty (first empty slot)
+_PB_END_EMPTY   = "\uee02"  # U+EE02 right-bracket empty (last empty slot)
 
 def _pomo_bar(done: int, total: int) -> str:
     """FiraCode progress bar using positional glyphs: first/mid/last filled, empty."""
@@ -194,7 +195,7 @@ def _pomo_bar(done: int, total: int) -> str:
     for i in range(total):
         is_last = (i == total - 1)
         if i >= done:
-            segs.append(_PB_END_EMPTY if is_last else _PB_EMPTY)
+            segs.append(_PB_FIRST_EMPTY if i == 0 else (_PB_END_EMPTY if is_last else _PB_EMPTY))
         elif i == 0:
             segs.append(_PB_FIRST)
         elif is_last:
@@ -215,7 +216,7 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
         total = minutes * 60
         bar = _pomo_bar(cycle - 1, cycles)
         for remaining in range(total, -1, -1):
-            line = f"{_fmt_time(remaining)}\n{bar}\x01{icon}"
+            line = f"{_fmt_time(remaining)}\n {bar}\x01{icon}"
             await show(line)
             print(f"\r  {icon} {_fmt_time(remaining)}  {cycle}/{cycles}   ",
                   end="", flush=True)
