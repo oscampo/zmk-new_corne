@@ -12,3 +12,5 @@ include:
     artifact-name: eyelash_corne_studio_left
   - board: eyelash_corne_left
     shield: settings_reset
+  - board: eyelash_corne_right
+    shield: settings_reset
