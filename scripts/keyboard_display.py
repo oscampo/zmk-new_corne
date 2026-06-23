@@ -88,7 +88,7 @@ def to_display(text: str) -> str:
     result = []
     for ch in text:
         cp = ord(ch)
-        if any(lo <= cp <= hi for lo, hi in _FONT_RANGES) or ch in "\n\r":
+        if any(lo <= cp <= hi for lo, hi in _FONT_RANGES) or ch in "\n\r\x01":
             result.append(ch)
         else:
             # Try NFD decomposition: strip combining marks, keep base if in range
@@ -174,11 +174,11 @@ def _fmt_time(seconds: int) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-# FiraCode Nerd Font progress bar glyphs (U+EE00-EE05)
-_PB_LEFT  = ""   # [
-_PB_FILL  = ""   # filled segment
-_PB_EMPTY = ""   # empty segment
-_PB_RIGHT = ""   # ]
+# FiraCode Nerd Font progress bar glyphs (U+EE01-EE05)
+_PB_FIRST = ""   # U+EE03 left-end filled
+_PB_MID   = ""   # U+EE04 middle filled
+_PB_LAST  = ""   # U+EE05 right-end filled
+_PB_EMPTY = ""   # U+EE01 empty segment
 
 # Pomodoro mode icons (Font Awesome, already in font)
 _ICON_WORK  = ""   # nf-fa-cog
@@ -187,8 +187,18 @@ _ICON_LONG  = ""   # nf-fa-hourglass
 
 
 def _pomo_bar(done: int, total: int) -> str:
-    """FiraCode progress bar: [████░░░░] style."""
-    return _PB_LEFT + _PB_FILL * done + _PB_EMPTY * (total - done) + _PB_RIGHT
+    """FiraCode progress bar using positional glyphs: first/mid/last filled, empty."""
+    segs = []
+    for i in range(total):
+        if i >= done:
+            segs.append(_PB_EMPTY)
+        elif i == 0:
+            segs.append(_PB_FIRST)
+        elif i == total - 1:
+            segs.append(_PB_LAST)
+        else:
+            segs.append(_PB_MID)
+    return "".join(segs)
 
 
 async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
@@ -202,7 +212,7 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
         total = minutes * 60
         bar = _pomo_bar(cycle - 1, cycles)
         for remaining in range(total, -1, -1):
-            line = f"{icon} {_fmt_time(remaining)}\n{bar}"
+            line = f"{_fmt_time(remaining)}\n{bar}\x01{icon}"
             await show(line)
             print(f"\r  {icon} {_fmt_time(remaining)}  {cycle}/{cycles}   ",
                   end="", flush=True)
@@ -229,7 +239,7 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
                 print(f"[Ciclo {cycle}/{cycles}] DESCANSO")
                 await countdown(_ICON_BREAK, brk, cycle)
 
-        await show(f"{_ICON_WORK} Listo!\n{_pomo_bar(cycles, cycles)}")
+        await show(f"Listo!\n{_pomo_bar(cycles, cycles)}\x01{_ICON_WORK}")
         print("\n✓ Sesión completada.")
 
     except KeyboardInterrupt:
@@ -560,7 +570,7 @@ async def run_weather(address: str, city: str, paired_windows: bool,
     icon  = _wmo_icon(data['wmo'])
     label = _wmo_label(data['wmo'])
     city  = data['city'][:12]
-    display = f"{city}\n{icon} {temp_str}\n{label}"
+    display = f"{city}\n{icon} {temp_str}\n{label}\x01{icon}"
     print(f"{city}: {icon} {temp_str}, {label}")
 
     await send_text(address, display, paired_windows=paired_windows, debug=debug)

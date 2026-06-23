@@ -105,7 +105,28 @@ static void draw_ble_canvas(void) {
         lv_canvas_draw_text(ble_canvas, 0, 12, CANVAS_SIZE, &dsc, clock_str);
     } else if (text_buf[0] != '\0') {
         dsc.font = &mono_8;
-        lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+
+        /* Two-column layout: "main text\x01large_icon"
+         * Left column (x=0..47): text in mono_8
+         * Right column (x=50..67): single icon in mono_16 (18px)
+         */
+        char *sep = strchr(text_buf, '\x01');
+        if (sep) {
+            char left[TEXT_MAX_LEN + 1];
+            uint16_t n = sep - text_buf;
+            if (n > TEXT_MAX_LEN) n = TEXT_MAX_LEN;
+            memcpy(left, text_buf, n);
+            left[n] = '\0';
+            lv_canvas_draw_text(ble_canvas, 0, 0, 48, &dsc, left);
+
+            lv_draw_label_dsc_t dsc2;
+            lv_draw_label_dsc_init(&dsc2);
+            dsc2.color = lv_color_white();
+            dsc2.font  = &mono_16;
+            lv_canvas_draw_text(ble_canvas, 50, 11, 18, &dsc2, sep + 1);
+        } else {
+            lv_canvas_draw_text(ble_canvas, 0, 0, CANVAS_SIZE, &dsc, text_buf);
+        }
     }
     /* else: no sync yet, show nothing */
 
