@@ -175,7 +175,7 @@ async def run_pomodoro(address: str, work: int, brk: int, cycles: int,
         print("\nPomodoro cancelado.")
 
 
-NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+NFL_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100"
 
 
 def _espn_get(url: str) -> dict:
@@ -218,7 +218,7 @@ def _parse_games(data: dict, team_filter: str = "") -> list[dict]:
 
 
 def _week_url(season: int, seasontype: int, week: int) -> str:
-    return f"{NFL_SCOREBOARD_URL}?season={season}&seasontype={seasontype}&week={week}"
+    return f"{NFL_SCOREBOARD_URL}&season={season}&seasontype={seasontype}&week={week}"
 
 
 def fetch_nfl_results(team_filter: str = "") -> list[dict]:
@@ -376,12 +376,10 @@ async def run_nfl(address: str, team_filter: str, next_week: bool,
                 await show(text)
                 await asyncio.sleep(CYCLE_INTERVAL)
                 if live:
-                    break
+                    break  # re-check refresh timer
 
-            if not live and team_filter:
-                break
             if not live:
-                continue
+                break  # one full cycle through the week, then done
 
     except KeyboardInterrupt:
         print("\nNFL mode stopped.")
