@@ -270,15 +270,14 @@ def format_nfl_game(game: dict) -> str:
     line1 = f"{away} vs {home}"
 
     if state == "post" and game["away_score"] and game["home_score"]:
-        line2 = f"  {game['away_score']}-{game['home_score']}"
+        line2 = f"{game['away_score']}-{game['home_score']}"
     elif state == "in":
-        # Live: show score + quarter/time
         score = f"{game['away_score']}-{game['home_score']}"
         detail = game["status_detail"][:10]
         line2 = f"{score} {detail}"
     else:
-        # Pre-game: show scheduled time
-        line2 = f"  {game['status_detail'][:12]}"
+        # Pre-game: show scheduled date/time from ESPN (e.g. "9/13 - 4:25 PM ET")
+        line2 = game["status_detail"][:20]
 
     return f"{line1}\n{line2}"
 
