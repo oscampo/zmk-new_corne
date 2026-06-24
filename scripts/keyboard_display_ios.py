@@ -380,6 +380,15 @@ class KeyboardDelegate:
         _ble_write_ctypes(self.peripheral, self.char, raw)
         return True
 
+# ── Delegate para tecla Return en campos de texto ─────────────────────────────
+class _ReturnDelegate:
+    def __init__(self, action):
+        self._action = action
+    def textfield_should_return(self, tf):
+        tf.end_editing()
+        self._action(None)
+        return True
+
 # ── Interfaz de usuario ───────────────────────────────────────────────────────
 class KeyboardApp(ui.View):
 
@@ -422,15 +431,17 @@ class KeyboardApp(ui.View):
             self.add_subview(l)
             return l
 
-        def tf(placeholder, x, y, w, h, text=''):
+        def tf(placeholder, x, y, w, h, text='', on_return=None):
             t = ui.TextField(frame=(x, y, w, h))
             t.placeholder      = placeholder
             t.text             = text
-            t.background_color = '#1f2937'
-            t.text_color       = '#f9fafb'
-            t.tint_color       = '#60a5fa'
+            t.background_color = 'white'
+            t.text_color       = 'black'
+            t.tint_color       = '#1d4ed8'
             t.corner_radius    = 8
             t.font             = ('<system>', 14)
+            if on_return:
+                t.delegate = _ReturnDelegate(on_return)
             self.add_subview(t)
             return t
 
@@ -467,7 +478,8 @@ class KeyboardApp(ui.View):
         btn('Reloj', self._do_clock, PAD, y, bw2, self.BLUE)
         btn('Limpiar', self._do_clear, PAD+bw2+GAP, y, bw2, self.GRAY)
         y += BH + GAP
-        self._tf_text = tf('Texto libre para el display…', PAD, y, W-PAD*2-BH-GAP, BH)
+        self._tf_text = tf('Texto libre para el display…', PAD, y, W-PAD*2-BH-GAP, BH,
+                           on_return=self._do_send_text)
         btn('↑', self._do_send_text, W-PAD-BH, y, BH, self.BLUE)
         y += BH + GAP
 
@@ -476,7 +488,7 @@ class KeyboardApp(ui.View):
         y += 20
         saved_city = self._prefs.get('city', '')
         self._tf_city = tf('Ciudad (vacío = auto por IP)', PAD, y, W-PAD*2-BH-GAP, BH,
-                           text=saved_city)
+                           text=saved_city, on_return=self._do_weather)
         btn('↑', self._do_weather, W-PAD-BH, y, BH, self.GREEN)
         y += BH + GAP
 
@@ -488,7 +500,7 @@ class KeyboardApp(ui.View):
         btn('50/10',self._do_pomo_long,    PAD+bw3*2+GAP*2,y,bw3, self.ORANGE)
         y += BH + GAP
         self._tf_pomo = tf('Personalizado: trabajo,descanso,ciclos[,descanso_largo]',
-                           PAD, y, W-PAD*2-BH-GAP, BH)
+                           PAD, y, W-PAD*2-BH-GAP, BH, on_return=self._do_pomo_custom)
         btn('▶', self._do_pomo_custom, W-PAD-BH, y, BH, self.ORANGE)
         y += BH + GAP
 
@@ -497,7 +509,7 @@ class KeyboardApp(ui.View):
         y += 20
         saved_team = self._prefs.get('nfl_team', '')
         self._tf_team = tf('Equipo (ej: KC, GB — vacío = todos)', PAD, y, W-PAD*2, BH,
-                           text=saved_team)
+                           text=saved_team, on_return=self._do_nfl_last)
         y += BH + GAP
         btn('Últimos', self._do_nfl_last,     PAD,           y, bw3, self.TEAL)
         btn('Próximos',self._do_nfl_next,     PAD+bw3+GAP,   y, bw3, self.TEAL)
