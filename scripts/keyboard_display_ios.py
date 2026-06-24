@@ -221,13 +221,14 @@ class KeyboardDelegate:
         cb.scan_for_peripherals()
 
     def did_discover_peripheral(self, p, *args):
-        name = (p.name or '').lower()
-        display_name = p.name or '(sin nombre)'
-        self.app._set_status(f'Visto: {display_name}')
-        if any(k in name for k in KEYBOARD_NAMES):
+        name = p.name or '(sin nombre)'
+        print(f'BLE: {name}  |  {p.uuid}')
+        name_lower = name.lower()
+        self.app._set_status(f'Visto: {name}')
+        if any(k in name_lower for k in KEYBOARD_NAMES):
             self.peripheral = p
             cb.stop_scan()
-            self.app._set_status(f'Conectando a {p.name}...')
+            self.app._set_status(f'Conectando a {name}...')
             cb.connect_peripheral(p)
 
     def did_connect_peripheral(self, p, *args):
