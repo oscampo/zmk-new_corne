@@ -215,30 +215,30 @@ class KeyboardDelegate:
         self.char       = None
         self._ready     = threading.Event()
 
-    def did_update_state(self, central):
-        if central.state == 'poweredOn':
-            self.app._set_status('Escaneando...')
-            cb.scan_for_peripherals([])
+    # Pythonista cb signatures: no 'central' arg, peripheral/service passed directly
+    def did_update_state(self):
+        self.app._set_status('Escaneando...')
+        cb.scan_for_peripherals([])
 
-    def did_discover_peripheral(self, central, peripheral, adv_data, rssi):
-        name = (peripheral.name or '').lower()
+    def did_discover_peripheral(self, p, adv_data, rssi):
+        name = (p.name or '').lower()
         if any(k in name for k in KEYBOARD_NAMES):
-            self.peripheral = peripheral
+            self.peripheral = p
             cb.stop_scan()
-            self.app._set_status(f'Conectando a {peripheral.name}...')
-            cb.connect_peripheral(peripheral)
+            self.app._set_status(f'Conectando a {p.name}...')
+            cb.connect_peripheral(p)
 
-    def did_connect_peripheral(self, central, peripheral):
-        self.app._set_status(f'Conectado: {peripheral.name} ✓')
+    def did_connect_peripheral(self, p):
+        self.app._set_status(f'Conectado: {p.name} ✓')
         self.app._set_connected(True)
-        peripheral.discover_services()
+        p.discover_services()
 
-    def did_fail_to_connect_peripheral(self, central, peripheral, error):
+    def did_fail_to_connect_peripheral(self, p, error):
         self.app._set_status('Error al conectar — reintentando...')
         self.peripheral = None
         cb.scan_for_peripherals([])
 
-    def did_disconnect_peripheral(self, central, peripheral, error):
+    def did_disconnect_peripheral(self, p, error):
         self.app._set_status('Desconectado — escaneando...')
         self.app._set_connected(False)
         self.peripheral = None
@@ -246,13 +246,13 @@ class KeyboardDelegate:
         self._ready.clear()
         cb.scan_for_peripherals([])
 
-    def did_discover_services(self, peripheral, error):
-        for svc in peripheral.services:
+    def did_discover_services(self, p, error):
+        for svc in p.services:
             if SERVICE_UUID in svc.uuid.upper():
-                peripheral.discover_characteristics(svc)
+                p.discover_characteristics(svc)
 
-    def did_discover_characteristics(self, service, error):
-        for char in service.characteristics:
+    def did_discover_characteristics(self, svc, error):
+        for char in svc.characteristics:
             if CHAR_UUID in char.uuid.upper():
                 self.char = char
                 self._ready.set()
