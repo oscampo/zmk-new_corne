@@ -356,7 +356,7 @@ class KeyboardDelegate:
             return False
         if not self.peripheral or not self.char:
             return False
-        data = to_display(text).encode('utf-8')[:64]
+        data = bytearray(to_display(text).encode('utf-8')[:64])
         self.peripheral.write_characteristic_value(data, self.char, False)
         return True
 
