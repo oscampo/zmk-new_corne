@@ -78,7 +78,7 @@ layers:
   - KP 9
   - KP 0
   - {t: \, h: Sft+\, s: '|'}
-  - {t: '$$mdi:transfer$$', type: trans}
+  - KP NLCK
   - {t: 'Sft+[', s: 'Sft+{'}
   - {t: '[', s: '{'}
   - <
