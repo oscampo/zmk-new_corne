@@ -207,6 +207,36 @@ def _clock_cmd():
     local_unix = int(datetime.now(timezone.utc).timestamp()) + offset_s
     return f'T:{local_unix}:H'
 
+# ── Recuperar periféricos ya conectados al sistema (objc_util) ───────────────
+def _retrieve_connected_keyboard():
+    """
+    Use CBCentralManager.retrieveConnectedPeripherals to find the keyboard
+    even when iOS hides it from normal BLE scans (because it's a HID device).
+    Returns a cb-compatible peripheral or None.
+    """
+    try:
+        from objc_util import ObjCClass, ObjCInstance, ns
+        CBUUID          = ObjCClass('CBUUID')
+        CBCentralManager = ObjCClass('CBCentralManager')
+
+        # A temporary manager is enough to call retrieveConnectedPeripherals
+        tmp = CBCentralManager.alloc().init()
+        uuid      = CBUUID.UUIDWithString_(SERVICE_UUID)
+        found     = tmp.retrieveConnectedPeripheralsWithServices_([uuid])
+        peripherals = list(found) if found else []
+
+        for p_objc in peripherals:
+            name = str(p_objc.name() or '')
+            uid  = str(p_objc.identifier())
+            print(f'Recuperado (objc): {name}  {uid}')
+            # Wrap as Pythonista cb peripheral so cb.connect_peripheral accepts it
+            return ObjCInstance(p_objc)
+
+    except Exception as e:
+        print(f'objc_util retrieve falló: {e}')
+    return None
+
+
 # ── Delegate CoreBluetooth ────────────────────────────────────────────────────
 class KeyboardDelegate:
     def __init__(self, app):
@@ -292,25 +322,18 @@ class KeyboardApp(ui.View):
     def _start_ble(self):
         self._set_status('Buscando teclado...')
         cb.set_central_delegate(self.delegate)
-        # First try to retrieve already-connected peripherals (keyboard is HID-connected)
-        ui.delay(self._try_retrieve, 0.5)
+        ui.delay(self._try_retrieve, 0.8)
 
     def _try_retrieve(self):
-        try:
-            # retrieveConnectedPeripherals - finds devices already connected to the system
-            peripherals = cb.get_peripherals(SERVICE_UUID)
-            if peripherals:
-                p = peripherals[0]
-                print(f'Recuperado: {p.name}  {p.uuid}')
-                self.delegate.peripheral = p
-                self._set_status(f'Conectando a {p.name}...')
-                cb.connect_peripheral(p)
-                return
-        except Exception as e:
-            print(f'get_peripherals falló: {e}')
-        # Fallback: scan (works when keyboard is not yet connected as HID)
-        self._set_status('Escaneando...')
-        cb.scan_for_peripherals()
+        """Try to find keyboard via retrieveConnectedPeripherals (works for HID-connected devices)."""
+        p = _retrieve_connected_keyboard()
+        if p is not None:
+            self.delegate.peripheral = p
+            self._set_status(f'Conectando a {p.name}...')
+            cb.connect_peripheral(p)
+        else:
+            self._set_status('Escaneando...')
+            cb.scan_for_peripherals()
 
     # ── Construcción UI ───────────────────────────────────────────────────────
     def _build_ui(self):
