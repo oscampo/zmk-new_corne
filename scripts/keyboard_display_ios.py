@@ -86,7 +86,7 @@ def _clock_cmd():
     local_now  = datetime.now().astimezone()
     offset_s   = int(local_now.utcoffset().total_seconds())
     local_unix = int(datetime.now(timezone.utc).timestamp()) + offset_s
-    return f'T:{local_unix}:H'
+    return f'T:{local_unix}:A'  # :A = 12h con a/p; :H = 24h
 
 # ── Pomodoro ──────────────────────────────────────────────────────────────────
 _PB_FIRST       = ''
