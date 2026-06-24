@@ -222,6 +222,8 @@ class KeyboardDelegate:
 
     def did_discover_peripheral(self, p, *args):
         name = (p.name or '').lower()
+        display_name = p.name or '(sin nombre)'
+        self.app._set_status(f'Visto: {display_name}')
         if any(k in name for k in KEYBOARD_NAMES):
             self.peripheral = p
             cb.stop_scan()
@@ -369,7 +371,18 @@ class KeyboardApp(ui.View):
         btn('NFL', self._do_nfl, PAD + bw2 + GAP, y, bw2, '#14532d')
         y += BH + GAP
 
-        # Fila 6: Reconectar
+        # Fila 6: UUID/dirección manual
+        self._tf_addr = ui.TextField(frame=(PAD, y, W-PAD*2, BH))
+        self._tf_addr.placeholder = 'UUID del teclado (opcional, para conectar directo)'
+        self._tf_addr.background_color = '#1f2937'
+        self._tf_addr.text_color = '#f9fafb'
+        self._tf_addr.tint_color = '#60a5fa'
+        self._tf_addr.corner_radius = 10
+        self._tf_addr.font = ('<system>', 13)
+        self.add_subview(self._tf_addr)
+        y += BH + GAP
+
+        # Fila 7: Reconectar
         btn('Reconectar BLE', self._do_reconnect, PAD, y, W-PAD*2, self.GRAY)
         y += BH + GAP
 
@@ -467,7 +480,6 @@ class KeyboardApp(ui.View):
     def _do_pomo_long(self, sender):    self._do_pomo('long')
 
     def _do_reconnect(self, sender):
-        self._set_status('Reconectando...')
         self.delegate.peripheral = None
         self.delegate.char = None
         self.delegate._ready.clear()
@@ -476,7 +488,24 @@ class KeyboardApp(ui.View):
             cb.stop_scan()
         except Exception:
             pass
-        cb.scan_for_peripherals()
+        manual = (self._tf_addr.text or '').strip()
+        if manual:
+            # Conectar directo por UUID si el usuario lo escribió
+            self._set_status(f'Conectando a {manual}...')
+            try:
+                p = cb.get_peripheral(manual)
+                if p:
+                    self.delegate.peripheral = p
+                    cb.connect_peripheral(p)
+                else:
+                    self._set_status('UUID no encontrado, escaneando...')
+                    cb.scan_for_peripherals()
+            except Exception as e:
+                self._set_status(f'Error: {e}')
+                cb.scan_for_peripherals()
+        else:
+            self._set_status('Escaneando...')
+            cb.scan_for_peripherals()
 
     def _do_nfl(self, sender):
         def _go():
