@@ -217,8 +217,7 @@ class KeyboardDelegate:
 
     # *args makes callbacks safe across Pythonista versions with different signatures
     def did_update_state(self, *args):
-        self.app._set_status('Escaneando...')
-        cb.scan_for_peripherals()
+        self.app._try_retrieve()
 
     def did_discover_peripheral(self, p, *args):
         name = p.name or '(sin nombre)'
@@ -291,13 +290,27 @@ class KeyboardApp(ui.View):
         ui.delay(self._start_ble, 0.3)
 
     def _start_ble(self):
-        self._set_status('Escaneando...')
+        self._set_status('Buscando teclado...')
         cb.set_central_delegate(self.delegate)
-        # Also scan directly in case did_update_state doesn't fire
+        # First try to retrieve already-connected peripherals (keyboard is HID-connected)
+        ui.delay(self._try_retrieve, 0.5)
+
+    def _try_retrieve(self):
         try:
-            cb.scan_for_peripherals()
-        except Exception:
-            pass
+            # retrieveConnectedPeripherals - finds devices already connected to the system
+            peripherals = cb.get_peripherals(SERVICE_UUID)
+            if peripherals:
+                p = peripherals[0]
+                print(f'Recuperado: {p.name}  {p.uuid}')
+                self.delegate.peripheral = p
+                self._set_status(f'Conectando a {p.name}...')
+                cb.connect_peripheral(p)
+                return
+        except Exception as e:
+            print(f'get_peripherals falló: {e}')
+        # Fallback: scan (works when keyboard is not yet connected as HID)
+        self._set_status('Escaneando...')
+        cb.scan_for_peripherals()
 
     # ── Construcción UI ───────────────────────────────────────────────────────
     def _build_ui(self):
@@ -489,24 +502,7 @@ class KeyboardApp(ui.View):
             cb.stop_scan()
         except Exception:
             pass
-        manual = (self._tf_addr.text or '').strip()
-        if manual:
-            # Conectar directo por UUID si el usuario lo escribió
-            self._set_status(f'Conectando a {manual}...')
-            try:
-                p = cb.get_peripheral(manual)
-                if p:
-                    self.delegate.peripheral = p
-                    cb.connect_peripheral(p)
-                else:
-                    self._set_status('UUID no encontrado, escaneando...')
-                    cb.scan_for_peripherals()
-            except Exception as e:
-                self._set_status(f'Error: {e}')
-                cb.scan_for_peripherals()
-        else:
-            self._set_status('Escaneando...')
-            cb.scan_for_peripherals()
+        self._try_retrieve()
 
     def _do_nfl(self, sender):
         def _go():
