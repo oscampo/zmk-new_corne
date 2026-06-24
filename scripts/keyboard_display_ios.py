@@ -591,6 +591,9 @@ class KeyboardApp(ui.View):
                 name  = data['city'][:12]
                 self._write(f'{name}\n{temp}\n{label}\x01{icon}')
                 self._set_mode(f'Clima: {name} {temp}')
+                time.sleep(5)
+                self._write(_clock_cmd())
+                self._set_mode('Reloj')
             except Exception as e:
                 self._set_mode(f'Error: {e}')
         self._run_bg(_go)
