@@ -221,30 +221,47 @@ def _retrieve_connected_keyboard():
 
         tmp = CBCentralManager.alloc().init()
 
-        # iOS caches these standard services when pairing a HID keyboard
+        # Log the manager state: 5 = PoweredOn, 4 = PoweredOff, 0 = Unknown
+        state = tmp.state()
+        print(f'CBCentralManager state: {state}  (5=PoweredOn)')
+
+        # Try both short-form (1812) and full 128-bit UUIDs
         search_uuids = [
-            '00001812-0000-1000-8000-00805F9B34FB',  # HID Service
-            '0000180F-0000-1000-8000-00805F9B34FB',  # Battery Service
-            '00001800-0000-1000-8000-00805F9B34FB',  # Generic Access
-            '00001801-0000-1000-8000-00805F9B34FB',  # Generic Attribute
-            SERVICE_UUID,                             # Our custom service
+            '1812',          # HID Service (short)
+            '180F',          # Battery Service (short)
+            '1800',          # Generic Access (short)
+            '1801',          # Generic Attribute (short)
+            '00001812-0000-1000-8000-00805F9B34FB',
+            '0000180F-0000-1000-8000-00805F9B34FB',
+            '00001800-0000-1000-8000-00805F9B34FB',
+            '00001801-0000-1000-8000-00805F9B34FB',
+            SERVICE_UUID,
         ]
 
         seen = set()
+        best_candidate = None  # fallback: first unnamed device found
         for svc_str in search_uuids:
             uuid  = CBUUID.UUIDWithString_(svc_str)
             found = tmp.retrieveConnectedPeripheralsWithServices_([uuid])
             for p_objc in (list(found) if found else []):
                 uid  = str(p_objc.identifier())
                 name = str(p_objc.name() or '')
-                print(f'Sistema conectado: {name}  |  {uid}')
                 if uid in seen:
                     continue
                 seen.add(uid)
+                print(f'Sistema conectado [{svc_str[:4]}]: {name!r}  |  {uid}')
                 name_lower = name.lower()
                 if any(k in name_lower for k in KEYBOARD_NAMES):
                     print(f'→ Teclado encontrado: {name}')
                     return ObjCInstance(p_objc)
+                if best_candidate is None:
+                    best_candidate = p_objc
+
+        if seen:
+            print(f'Ninguno coincide con KEYBOARD_NAMES={KEYBOARD_NAMES}')
+            print(f'Candidato por defecto: {best_candidate and str(best_candidate.name() or "(sin nombre)")}')
+        else:
+            print('retrieveConnectedPeripherals: sin resultados para todos los UUIDs')
 
     except Exception as e:
         print(f'objc_util retrieve falló: {e}')
