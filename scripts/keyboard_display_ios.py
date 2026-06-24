@@ -284,6 +284,10 @@ class KeyboardApp(ui.View):
         self._stop_evt  = threading.Event()
         self._bg_thread = None
         self._build_ui()
+        # BT se inicia después de que la vista sea visible
+        ui.delay(self._start_ble, 0.3)
+
+    def _start_ble(self):
         cb.set_central_delegate(self.delegate)
 
     # ── Construcción UI ───────────────────────────────────────────────────────
@@ -357,6 +361,10 @@ class KeyboardApp(ui.View):
         # Fila 5: Detener / NFL
         btn('Detener', self._do_stop, PAD, y, bw2, self.RED)
         btn('NFL', self._do_nfl, PAD + bw2 + GAP, y, bw2, '#14532d')
+        y += BH + GAP
+
+        # Fila 6: Reconectar
+        btn('Reconectar BLE', self._do_reconnect, PAD, y, W-PAD*2, self.GRAY)
         y += BH + GAP
 
         self.frame = (0, 0, W, y + PAD)
@@ -451,6 +459,18 @@ class KeyboardApp(ui.View):
     def _do_pomo_classic(self, sender): self._do_pomo('classic')
     def _do_pomo_short(self, sender):   self._do_pomo('short')
     def _do_pomo_long(self, sender):    self._do_pomo('long')
+
+    def _do_reconnect(self, sender):
+        self._set_status('Reconectando...')
+        self.delegate.peripheral = None
+        self.delegate.char = None
+        self.delegate._ready.clear()
+        self._set_connected(False)
+        try:
+            cb.stop_scan()
+        except Exception:
+            pass
+        cb.scan_for_peripherals([])
 
     def _do_nfl(self, sender):
         def _go():
