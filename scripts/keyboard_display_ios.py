@@ -10,6 +10,7 @@ import ui
 import threading
 import time
 import json
+import os
 import urllib.request
 import urllib.parse
 import unicodedata
@@ -19,6 +20,29 @@ from datetime import timezone, datetime
 SERVICE_UUID   = '00001523-1212-EFDE-1523-785FEABCD123'
 CHAR_UUID      = '00001524-1212-EFDE-1523-785FEABCD123'
 KEYBOARD_NAMES = ['corne', 'zmk', 'eyelash']
+
+# UUID del teclado guardado en disco para reconexión sin scan
+_UUID_FILE = os.path.join(os.path.expanduser('~'), 'Documents', 'keyboard_uuid.txt')
+
+def _save_keyboard_uuid(uuid_str):
+    try:
+        with open(_UUID_FILE, 'w') as f:
+            f.write(uuid_str.strip())
+        print(f'UUID guardado: {uuid_str}')
+    except Exception as e:
+        print(f'No se pudo guardar UUID: {e}')
+
+def _load_keyboard_uuid():
+    try:
+        if os.path.exists(_UUID_FILE):
+            with open(_UUID_FILE) as f:
+                uid = f.read().strip()
+            if uid:
+                print(f'UUID cargado desde disco: {uid}')
+                return uid
+    except Exception as e:
+        print(f'No se pudo leer UUID: {e}')
+    return None
 
 # ── Rangos de fuente ──────────────────────────────────────────────────────────
 _FONT_RANGES = [
@@ -207,34 +231,58 @@ def _clock_cmd():
     local_unix = int(datetime.now(timezone.utc).timestamp()) + offset_s
     return f'T:{local_unix}:H'
 
-# ── Recuperar periféricos ya conectados al sistema (objc_util) ───────────────
-def _retrieve_connected_keyboard():
+
+# ── Escritura BLE via ctypes (evita bug PY_SSIZE_T_CLEAN de Pythonista) ──────
+def _ble_write_ctypes(peripheral, characteristic, data: bytes):
     """
-    Use CBCentralManager.retrieveConnectedPeripherals to find the keyboard
-    even when iOS hides it from normal BLE scans (because it's a HID device).
-    Returns a cb-compatible peripheral or None.
+    Llama a CBPeripheral.writeValue:forCharacteristic:type: directamente via
+    ctypes/objc_msgSend, extrayendo el puntero ObjC del wrapper _cb.Peripheral.
+    El wrapper CPython tiene layout: [refcnt(8), type*(8), objc_ptr(8), ...]
     """
-    try:
-        from objc_util import ObjCClass, ObjCInstance, ns
-        CBUUID          = ObjCClass('CBUUID')
-        CBCentralManager = ObjCClass('CBCentralManager')
+    import ctypes
 
-        # A temporary manager is enough to call retrieveConnectedPeripherals
-        tmp = CBCentralManager.alloc().init()
-        uuid      = CBUUID.UUIDWithString_(SERVICE_UUID)
-        found     = tmp.retrieveConnectedPeripheralsWithServices_([uuid])
-        peripherals = list(found) if found else []
+    libobjc = ctypes.cdll.LoadLibrary('libobjc.dylib')
+    libobjc.objc_msgSend.restype  = ctypes.c_void_p
+    libobjc.sel_registerName.restype = ctypes.c_void_p
+    libobjc.sel_registerName.argtypes = [ctypes.c_char_p]
+    libobjc.objc_getClass.restype = ctypes.c_void_p
+    libobjc.objc_getClass.argtypes = [ctypes.c_char_p]
 
-        for p_objc in peripherals:
-            name = str(p_objc.name() or '')
-            uid  = str(p_objc.identifier())
-            print(f'Recuperado (objc): {name}  {uid}')
-            # Wrap as Pythonista cb peripheral so cb.connect_peripheral accepts it
-            return ObjCInstance(p_objc)
+    PSIZE = 8  # 64-bit iOS
 
-    except Exception as e:
-        print(f'objc_util retrieve falló: {e}')
-    return None
+    # Extraer puntero ObjC desde el wrapper _cb.Peripheral / _cb.Characteristic
+    # Probamos offsets 2, 3 y 4 hasta encontrar un puntero en rango válido de iOS
+    def _extract_ptr(py_obj):
+        base = id(py_obj)
+        for off in (2, 3, 4, 5):
+            v = ctypes.c_void_p.from_address(base + off * PSIZE).value
+            if v and 0x100000000 < v < 0x7fffffffffff:
+                return v
+        return None
+
+    p_ptr  = _extract_ptr(peripheral)
+    ch_ptr = _extract_ptr(characteristic)
+    if not p_ptr or not ch_ptr:
+        raise RuntimeError(f'No se pudo extraer puntero ObjC (p={p_ptr:#x}, ch={ch_ptr:#x})')
+
+    # Crear NSData
+    NSData  = libobjc.objc_getClass(b'NSData')
+    sel_d   = libobjc.sel_registerName(b'dataWithBytes:length:')
+    libobjc.objc_msgSend.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_char_p, ctypes.c_ulong,
+    ]
+    ns_data = libobjc.objc_msgSend(NSData, sel_d, data, ctypes.c_ulong(len(data)))
+
+    # writeValue:forCharacteristic:type:  (1 = CBCharacteristicWriteWithoutResponse)
+    sel_w = libobjc.sel_registerName(b'writeValue:forCharacteristic:type:')
+    libobjc.objc_msgSend.restype  = None
+    libobjc.objc_msgSend.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong,
+    ]
+    libobjc.objc_msgSend(p_ptr, sel_w, ns_data, ch_ptr, ctypes.c_ulong(1))
+    print(f'BLE write OK ({len(data)}B)')
 
 
 # ── Delegate CoreBluetooth ────────────────────────────────────────────────────
@@ -256,6 +304,7 @@ class KeyboardDelegate:
         self.app._set_status(f'Visto: {name}')
         if any(k in name_lower for k in KEYBOARD_NAMES):
             self.peripheral = p
+            _save_keyboard_uuid(str(p.uuid))  # guardar para reconexión futura
             cb.stop_scan()
             self.app._set_status(f'Conectando a {name}...')
             cb.connect_peripheral(p)
@@ -266,17 +315,15 @@ class KeyboardDelegate:
         p.discover_services()
 
     def did_fail_to_connect_peripheral(self, p, *args):
-        self.app._set_status('Error al conectar — reintentando...')
+        self.app._set_status('Error al conectar — pulsa Reconectar')
         self.peripheral = None
-        cb.scan_for_peripherals()
 
     def did_disconnect_peripheral(self, p, *args):
-        self.app._set_status('Desconectado — escaneando...')
+        self.app._set_status('Desconectado — pulsa BT_SEL 0 en el teclado')
         self.app._set_connected(False)
         self.peripheral = None
         self.char = None
         self._ready.clear()
-        cb.scan_for_peripherals()
 
     def did_discover_services(self, p, *args):
         for svc in p.services:
@@ -296,8 +343,8 @@ class KeyboardDelegate:
             return False
         if not self.peripheral or not self.char:
             return False
-        data = to_display(text).encode('utf-8')[:64]
-        self.peripheral.write_characteristic_value(data, self.char, False)
+        raw = to_display(text).encode('utf-8')[:64]
+        _ble_write_ctypes(self.peripheral, self.char, raw)
         return True
 
 # ── Interfaz de usuario ───────────────────────────────────────────────────────
@@ -320,20 +367,9 @@ class KeyboardApp(ui.View):
         ui.delay(self._start_ble, 0.3)
 
     def _start_ble(self):
-        self._set_status('Buscando teclado...')
+        self._set_status('Escaneando… (¿presionaste BT_SEL 1 en el teclado?)')
         cb.set_central_delegate(self.delegate)
-        ui.delay(self._try_retrieve, 0.8)
-
-    def _try_retrieve(self):
-        """Try to find keyboard via retrieveConnectedPeripherals (works for HID-connected devices)."""
-        p = _retrieve_connected_keyboard()
-        if p is not None:
-            self.delegate.peripheral = p
-            self._set_status(f'Conectando a {p.name}...')
-            cb.connect_peripheral(p)
-        else:
-            self._set_status('Escaneando...')
-            cb.scan_for_peripherals()
+        ui.delay(cb.scan_for_peripherals, 0.5)
 
     # ── Construcción UI ───────────────────────────────────────────────────────
     def _build_ui(self):
@@ -408,20 +444,19 @@ class KeyboardApp(ui.View):
         btn('NFL', self._do_nfl, PAD + bw2 + GAP, y, bw2, '#14532d')
         y += BH + GAP
 
-        # Fila 6: UUID/dirección manual
-        self._tf_addr = ui.TextField(frame=(PAD, y, W-PAD*2, BH))
-        self._tf_addr.placeholder = 'UUID del teclado (opcional, para conectar directo)'
-        self._tf_addr.background_color = '#1f2937'
-        self._tf_addr.text_color = '#f9fafb'
-        self._tf_addr.tint_color = '#60a5fa'
-        self._tf_addr.corner_radius = 10
-        self._tf_addr.font = ('<system>', 13)
-        self.add_subview(self._tf_addr)
+        # Fila 6: Reconectar
+        btn('Reconectar', self._do_reconnect, PAD, y, W-PAD*2, self.GRAY)
         y += BH + GAP
 
-        # Fila 7: Reconectar
-        btn('Reconectar BLE', self._do_reconnect, PAD, y, W-PAD*2, self.GRAY)
-        y += BH + GAP
+        # Instrucciones de uso
+        lbl_hint = ui.Label(frame=(PAD, y, W-PAD*2, 52))
+        lbl_hint.text = ('Antes de abrir esta app: presiona BT_SEL 1 en el teclado.\n'
+                         'Al terminar: presiona BT_SEL 0 para volver al iPad.')
+        lbl_hint.text_color = '#6b7280'
+        lbl_hint.font = ('<system>', 12)
+        lbl_hint.number_of_lines = 0
+        self.add_subview(lbl_hint)
+        y += 56
 
         self.frame = (0, 0, W, y + PAD)
 
@@ -521,11 +556,12 @@ class KeyboardApp(ui.View):
         self.delegate.char = None
         self.delegate._ready.clear()
         self._set_connected(False)
+        self._set_status('Escaneando… (¿presionaste BT_SEL 1 en el teclado?)')
         try:
             cb.stop_scan()
         except Exception:
             pass
-        self._try_retrieve()
+        cb.scan_for_peripherals()
 
     def _do_nfl(self, sender):
         def _go():
