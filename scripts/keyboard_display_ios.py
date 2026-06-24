@@ -296,6 +296,59 @@ def _retrieve_connected_keyboard():
     return None
 
 
+# ── Escritura BLE via ctypes (evita bug PY_SSIZE_T_CLEAN de Pythonista) ──────
+def _ble_write_ctypes(peripheral, characteristic, data: bytes):
+    """
+    Llama a CBPeripheral.writeValue:forCharacteristic:type: directamente via
+    ctypes/objc_msgSend, extrayendo el puntero ObjC del wrapper _cb.Peripheral.
+    El wrapper CPython tiene layout: [refcnt(8), type*(8), objc_ptr(8), ...]
+    """
+    import ctypes
+
+    libobjc = ctypes.cdll.LoadLibrary('libobjc.dylib')
+    libobjc.objc_msgSend.restype  = ctypes.c_void_p
+    libobjc.sel_registerName.restype = ctypes.c_void_p
+    libobjc.sel_registerName.argtypes = [ctypes.c_char_p]
+    libobjc.objc_getClass.restype = ctypes.c_void_p
+    libobjc.objc_getClass.argtypes = [ctypes.c_char_p]
+
+    PSIZE = 8  # 64-bit iOS
+
+    # Extraer puntero ObjC desde el wrapper _cb.Peripheral / _cb.Characteristic
+    # Probamos offsets 2, 3 y 4 hasta encontrar un puntero en rango válido de iOS
+    def _extract_ptr(py_obj):
+        base = id(py_obj)
+        for off in (2, 3, 4, 5):
+            v = ctypes.c_void_p.from_address(base + off * PSIZE).value
+            if v and 0x100000000 < v < 0x7fffffffffff:
+                return v
+        return None
+
+    p_ptr  = _extract_ptr(peripheral)
+    ch_ptr = _extract_ptr(characteristic)
+    if not p_ptr or not ch_ptr:
+        raise RuntimeError(f'No se pudo extraer puntero ObjC (p={p_ptr:#x}, ch={ch_ptr:#x})')
+
+    # Crear NSData
+    NSData  = libobjc.objc_getClass(b'NSData')
+    sel_d   = libobjc.sel_registerName(b'dataWithBytes:length:')
+    libobjc.objc_msgSend.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_char_p, ctypes.c_ulong,
+    ]
+    ns_data = libobjc.objc_msgSend(NSData, sel_d, data, ctypes.c_ulong(len(data)))
+
+    # writeValue:forCharacteristic:type:  (1 = CBCharacteristicWriteWithoutResponse)
+    sel_w = libobjc.sel_registerName(b'writeValue:forCharacteristic:type:')
+    libobjc.objc_msgSend.restype  = None
+    libobjc.objc_msgSend.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong,
+    ]
+    libobjc.objc_msgSend(p_ptr, sel_w, ns_data, ch_ptr, ctypes.c_ulong(1))
+    print(f'BLE write OK ({len(data)}B)')
+
+
 # ── Delegate CoreBluetooth ────────────────────────────────────────────────────
 class KeyboardDelegate:
     def __init__(self, app):
@@ -357,18 +410,7 @@ class KeyboardDelegate:
         if not self.peripheral or not self.char:
             return False
         raw = to_display(text).encode('utf-8')[:64]
-        # Pythonista's write_characteristic_value has a PY_SSIZE_T_CLEAN bug;
-        # call CoreBluetooth directly via objc_util to bypass it.
-        try:
-            from objc_util import ObjCInstance, ObjCClass
-            NSData = ObjCClass('NSData')
-            ns_data  = NSData.dataWithBytes_length_(raw, len(raw))
-            p_objc   = ObjCInstance(self.peripheral)
-            ch_objc  = ObjCInstance(self.char)
-            p_objc.writeValue_forCharacteristic_type_(ns_data, ch_objc, 1)  # 1=WithoutResponse
-        except Exception as e:
-            print(f'objc write falló: {e}, intentando cb...')
-            self.peripheral.write_characteristic_value(bytearray(raw), self.char, False)
+        _ble_write_ctypes(self.peripheral, self.char, raw)
         return True
 
 # ── Interfaz de usuario ───────────────────────────────────────────────────────
