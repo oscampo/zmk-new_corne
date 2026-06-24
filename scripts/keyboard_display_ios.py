@@ -215,12 +215,12 @@ class KeyboardDelegate:
         self.char       = None
         self._ready     = threading.Event()
 
-    # Pythonista cb signatures: no 'central' arg, peripheral/service passed directly
-    def did_update_state(self):
+    # *args makes callbacks safe across Pythonista versions with different signatures
+    def did_update_state(self, *args):
         self.app._set_status('Escaneando...')
         cb.scan_for_peripherals([])
 
-    def did_discover_peripheral(self, p, adv_data, rssi):
+    def did_discover_peripheral(self, p, *args):
         name = (p.name or '').lower()
         if any(k in name for k in KEYBOARD_NAMES):
             self.peripheral = p
@@ -228,17 +228,17 @@ class KeyboardDelegate:
             self.app._set_status(f'Conectando a {p.name}...')
             cb.connect_peripheral(p)
 
-    def did_connect_peripheral(self, p):
+    def did_connect_peripheral(self, p, *args):
         self.app._set_status(f'Conectado: {p.name} ✓')
         self.app._set_connected(True)
         p.discover_services()
 
-    def did_fail_to_connect_peripheral(self, p, error):
+    def did_fail_to_connect_peripheral(self, p, *args):
         self.app._set_status('Error al conectar — reintentando...')
         self.peripheral = None
         cb.scan_for_peripherals([])
 
-    def did_disconnect_peripheral(self, p, error):
+    def did_disconnect_peripheral(self, p, *args):
         self.app._set_status('Desconectado — escaneando...')
         self.app._set_connected(False)
         self.peripheral = None
@@ -246,12 +246,12 @@ class KeyboardDelegate:
         self._ready.clear()
         cb.scan_for_peripherals([])
 
-    def did_discover_services(self, p, error):
+    def did_discover_services(self, p, *args):
         for svc in p.services:
             if SERVICE_UUID in svc.uuid.upper():
                 p.discover_characteristics(svc)
 
-    def did_discover_characteristics(self, svc, error):
+    def did_discover_characteristics(self, svc, *args):
         for char in svc.characteristics:
             if CHAR_UUID in char.uuid.upper():
                 self.char = char
@@ -288,7 +288,13 @@ class KeyboardApp(ui.View):
         ui.delay(self._start_ble, 0.3)
 
     def _start_ble(self):
+        self._set_status('Escaneando...')
         cb.set_central_delegate(self.delegate)
+        # Also scan directly in case did_update_state doesn't fire
+        try:
+            cb.scan_for_peripherals([])
+        except Exception:
+            pass
 
     # ── Construcción UI ───────────────────────────────────────────────────────
     def _build_ui(self):
