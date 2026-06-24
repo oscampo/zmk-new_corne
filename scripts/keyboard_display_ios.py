@@ -89,15 +89,15 @@ def _clock_cmd():
     return f'T:{local_unix}:H'
 
 # ── Pomodoro ──────────────────────────────────────────────────────────────────
-_PB_FIRST       = ''
-_PB_MID         = ''
-_PB_LAST        = ''
-_PB_EMPTY       = ''
-_PB_FIRST_EMPTY = ''
-_PB_END_EMPTY   = ''
-_ICON_WORK  = ''
-_ICON_BREAK = ''
-_ICON_LONG  = ''
+_PB_FIRST       = ''
+_PB_MID         = ''
+_PB_LAST        = ''
+_PB_EMPTY       = ''
+_PB_FIRST_EMPTY = ''
+_PB_END_EMPTY   = ''
+_ICON_WORK  = ''  # nf-fa-gavel
+_ICON_BREAK = ''  # nf-fa-coffee
+_ICON_LONG  = ''  # nf-fa-hourglass
 
 POMODORO_PRESETS = {
     'classic': (25,  5, 4, 15),
@@ -136,17 +136,17 @@ def _fmt_time(seconds):
 
 # ── Clima ─────────────────────────────────────────────────────────────────────
 _WMO_CONDITIONS = [
-    (range(0,   1),  '', 'Sunny'),
-    (range(1,   2),  '', 'PCloudy'),
-    (range(2,   3),  '', 'Cloudy'),
-    (range(3,   4),  '', 'Overcast'),
-    (range(45,  49), '', 'Fog'),
-    (range(51,  68), '', 'Rain'),
-    (range(71,  78), '', 'Snow'),
-    (range(80,  83), '', 'Showers'),
-    (range(85,  87), '', 'Snowshwrs'),
-    (range(95,  96), '', 'Storm'),
-    (range(96, 100), '', 'HvyStorm'),
+    (range(0,   1),  '', 'Sunny'),
+    (range(1,   2),  '', 'PCloudy'),
+    (range(2,   3),  '', 'Cloudy'),
+    (range(3,   4),  '', 'Overcast'),
+    (range(45,  49), '', 'Fog'),
+    (range(51,  68), '', 'Rain'),
+    (range(71,  78), '', 'Snow'),
+    (range(80,  83), '', 'Showers'),
+    (range(85,  87), '', 'Snowshwrs'),
+    (range(95,  96), '', 'Storm'),
+    (range(96, 100), '', 'HvyStorm'),
 ]
 
 def _wmo_icon(code):
@@ -181,8 +181,8 @@ def fetch_weather(city=''):
     return {'city': name, 'temp_c': cw['temperature'], 'wmo': int(cw['weathercode'])}
 
 # ── NFL ───────────────────────────────────────────────────────────────────────
-_NFL_TROPHY = ''
-_NFL_BOLT   = ''
+_NFL_TROPHY = ''  # nf-fa-trophy
+_NFL_BOLT   = ''  # nf-fa-bolt
 _NFL_URL    = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100'
 
 def _espn_get(url):
