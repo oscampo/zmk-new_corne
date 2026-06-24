@@ -10,6 +10,7 @@ import ui
 import threading
 import time
 import json
+import os
 import urllib.request
 import urllib.parse
 import unicodedata
@@ -19,6 +20,29 @@ from datetime import timezone, datetime
 SERVICE_UUID   = '00001523-1212-EFDE-1523-785FEABCD123'
 CHAR_UUID      = '00001524-1212-EFDE-1523-785FEABCD123'
 KEYBOARD_NAMES = ['corne', 'zmk', 'eyelash']
+
+# UUID del teclado guardado en disco para reconexión sin scan
+_UUID_FILE = os.path.join(os.path.expanduser('~'), 'Documents', 'keyboard_uuid.txt')
+
+def _save_keyboard_uuid(uuid_str):
+    try:
+        with open(_UUID_FILE, 'w') as f:
+            f.write(uuid_str.strip())
+        print(f'UUID guardado: {uuid_str}')
+    except Exception as e:
+        print(f'No se pudo guardar UUID: {e}')
+
+def _load_keyboard_uuid():
+    try:
+        if os.path.exists(_UUID_FILE):
+            with open(_UUID_FILE) as f:
+                uid = f.read().strip()
+            if uid:
+                print(f'UUID cargado desde disco: {uid}')
+                return uid
+    except Exception as e:
+        print(f'No se pudo leer UUID: {e}')
+    return None
 
 # ── Rangos de fuente ──────────────────────────────────────────────────────────
 _FONT_RANGES = [
@@ -210,36 +234,43 @@ def _clock_cmd():
 # ── Recuperar periféricos ya conectados al sistema (objc_util) ───────────────
 def _retrieve_connected_keyboard():
     """
-    Use CBCentralManager.retrieveConnectedPeripherals to find the keyboard.
-    iOS only caches services it has discovered; search by HID/Battery/standard
-    UUIDs (which iOS knows from the HID pairing) and filter by device name.
+    Intenta encontrar el teclado usando objc_util:
+    1. Si hay UUID guardado en disco, usa retrievePeripherals(withIdentifiers:)
+    2. Si no, intenta retrieveConnectedPeripherals con UUIDs de servicios HID
+    iOS oculta dispositivos HID de los scans normales de CoreBluetooth.
     """
     try:
-        from objc_util import ObjCClass, ObjCInstance
+        from objc_util import ObjCClass, ObjCInstance, ns
+        import ctypes
         CBUUID           = ObjCClass('CBUUID')
+        NSUUID           = ObjCClass('NSUUID')
         CBCentralManager = ObjCClass('CBCentralManager')
 
         tmp = CBCentralManager.alloc().init()
-
-        # Log the manager state: 5 = PoweredOn, 4 = PoweredOff, 0 = Unknown
         state = tmp.state()
-        print(f'CBCentralManager state: {state}  (5=PoweredOn)')
+        print(f'CBCentralManager state: {state}  (5=PoweredOn, 0=Unknown)')
 
-        # Try both short-form (1812) and full 128-bit UUIDs
+        # ── Intento 1: UUID guardado desde sesión anterior ────────────────────
+        saved_uid = _load_keyboard_uuid()
+        if saved_uid:
+            ns_uuid = NSUUID.alloc().initWithUUIDString_(saved_uid)
+            found   = tmp.retrievePeripheralsWithIdentifiers_([ns_uuid])
+            for p_objc in (list(found) if found else []):
+                name = str(p_objc.name() or '(sin nombre)')
+                uid  = str(p_objc.identifier())
+                print(f'Recuperado por UUID: {name}  |  {uid}')
+                return ObjCInstance(p_objc)
+            print(f'UUID guardado no encontrado: {saved_uid}')
+
+        # ── Intento 2: retrieveConnectedPeripherals con UUIDs de servicios ────
         search_uuids = [
-            '1812',          # HID Service (short)
-            '180F',          # Battery Service (short)
-            '1800',          # Generic Access (short)
-            '1801',          # Generic Attribute (short)
-            '00001812-0000-1000-8000-00805F9B34FB',
-            '0000180F-0000-1000-8000-00805F9B34FB',
-            '00001800-0000-1000-8000-00805F9B34FB',
-            '00001801-0000-1000-8000-00805F9B34FB',
+            '1812',   # HID
+            '180F',   # Battery
+            '1800',   # Generic Access
+            '1801',   # Generic Attribute
             SERVICE_UUID,
         ]
-
         seen = set()
-        best_candidate = None  # fallback: first unnamed device found
         for svc_str in search_uuids:
             uuid  = CBUUID.UUIDWithString_(svc_str)
             found = tmp.retrieveConnectedPeripheralsWithServices_([uuid])
@@ -249,22 +280,19 @@ def _retrieve_connected_keyboard():
                 if uid in seen:
                     continue
                 seen.add(uid)
-                print(f'Sistema conectado [{svc_str[:4]}]: {name!r}  |  {uid}')
-                name_lower = name.lower()
-                if any(k in name_lower for k in KEYBOARD_NAMES):
+                print(f'Sistema conectado [{svc_str}]: {name!r}  |  {uid}')
+                if any(k in name.lower() for k in KEYBOARD_NAMES):
                     print(f'→ Teclado encontrado: {name}')
+                    _save_keyboard_uuid(uid)
                     return ObjCInstance(p_objc)
-                if best_candidate is None:
-                    best_candidate = p_objc
 
-        if seen:
-            print(f'Ninguno coincide con KEYBOARD_NAMES={KEYBOARD_NAMES}')
-            print(f'Candidato por defecto: {best_candidate and str(best_candidate.name() or "(sin nombre)")}')
-        else:
-            print('retrieveConnectedPeripherals: sin resultados para todos los UUIDs')
+        if not seen:
+            print('retrieveConnectedPeripherals: vacío para todos los UUIDs')
+            print('→ El teclado no es visible para CoreBluetooth mientras está conectado como HID')
+            print('→ Para configurar: desconecta el teclado en Ajustes > Bluetooth, luego reconecta la app')
 
     except Exception as e:
-        print(f'objc_util retrieve falló: {e}')
+        print(f'objc_util falló: {e}')
     return None
 
 
@@ -287,6 +315,7 @@ class KeyboardDelegate:
         self.app._set_status(f'Visto: {name}')
         if any(k in name_lower for k in KEYBOARD_NAMES):
             self.peripheral = p
+            _save_keyboard_uuid(str(p.uuid))  # guardar para reconexión futura
             cb.stop_scan()
             self.app._set_status(f'Conectando a {name}...')
             cb.connect_peripheral(p)
@@ -450,9 +479,19 @@ class KeyboardApp(ui.View):
         self.add_subview(self._tf_addr)
         y += BH + GAP
 
-        # Fila 7: Reconectar
-        btn('Reconectar BLE', self._do_reconnect, PAD, y, W-PAD*2, self.GRAY)
+        # Fila 7: Reconectar / Configurar
+        btn('Reconectar', self._do_reconnect, PAD, y, bw2, self.GRAY)
+        btn('Configurar 1a vez', self._do_setup, PAD + bw2 + GAP, y, bw2, '#4c1d95')
         y += BH + GAP
+
+        # Instrucciones de primera vez
+        self._lbl_setup = ui.Label(frame=(PAD, y, W-PAD*2, 60))
+        self._lbl_setup.text = ''
+        self._lbl_setup.text_color = '#fbbf24'
+        self._lbl_setup.font = ('<system>', 12)
+        self._lbl_setup.number_of_lines = 0
+        self.add_subview(self._lbl_setup)
+        y += 64
 
         self.frame = (0, 0, W, y + PAD)
 
@@ -547,7 +586,29 @@ class KeyboardApp(ui.View):
     def _do_pomo_short(self, sender):   self._do_pomo('short')
     def _do_pomo_long(self, sender):    self._do_pomo('long')
 
+    def _do_setup(self, sender):
+        """Modo configuración: requiere que el teclado esté DESconectado del iPad en Ajustes > Bluetooth."""
+        msg = ('CONFIGURACIÓN INICIAL:\n'
+               '1. Ve a Ajustes > Bluetooth\n'
+               '2. Desconecta/Olvida el teclado Corne\n'
+               '3. El teclado empezará a anunciar\n'
+               '4. Pulsa "Reconectar" — el scan lo encontrará\n'
+               '5. Se guarda el UUID automáticamente\n'
+               '6. Reconecta el teclado en Ajustes')
+        self._lbl_setup.text = msg
+        self._set_status('Esperando: desconecta el teclado en Ajustes primero')
+        self.delegate.peripheral = None
+        self.delegate.char = None
+        self.delegate._ready.clear()
+        self._set_connected(False)
+        try:
+            cb.stop_scan()
+        except Exception:
+            pass
+        cb.scan_for_peripherals()
+
     def _do_reconnect(self, sender):
+        self._lbl_setup.text = ''
         self.delegate.peripheral = None
         self.delegate.char = None
         self.delegate._ready.clear()
