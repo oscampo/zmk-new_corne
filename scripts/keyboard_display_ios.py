@@ -356,8 +356,19 @@ class KeyboardDelegate:
             return False
         if not self.peripheral or not self.char:
             return False
-        data = bytearray(to_display(text).encode('utf-8')[:64])
-        self.peripheral.write_characteristic_value(data, self.char, False)
+        raw = to_display(text).encode('utf-8')[:64]
+        # Pythonista's write_characteristic_value has a PY_SSIZE_T_CLEAN bug;
+        # call CoreBluetooth directly via objc_util to bypass it.
+        try:
+            from objc_util import ObjCInstance, ObjCClass
+            NSData = ObjCClass('NSData')
+            ns_data  = NSData.dataWithBytes_length_(raw, len(raw))
+            p_objc   = ObjCInstance(self.peripheral)
+            ch_objc  = ObjCInstance(self.char)
+            p_objc.writeValue_forCharacteristic_type_(ns_data, ch_objc, 1)  # 1=WithoutResponse
+        except Exception as e:
+            print(f'objc write falló: {e}, intentando cb...')
+            self.peripheral.write_characteristic_value(bytearray(raw), self.char, False)
         return True
 
 # ── Interfaz de usuario ───────────────────────────────────────────────────────
