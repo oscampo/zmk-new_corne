@@ -218,7 +218,7 @@ class KeyboardDelegate:
     # *args makes callbacks safe across Pythonista versions with different signatures
     def did_update_state(self, *args):
         self.app._set_status('Escaneando...')
-        cb.scan_for_peripherals([])
+        cb.scan_for_peripherals()
 
     def did_discover_peripheral(self, p, *args):
         name = (p.name or '').lower()
@@ -236,7 +236,7 @@ class KeyboardDelegate:
     def did_fail_to_connect_peripheral(self, p, *args):
         self.app._set_status('Error al conectar — reintentando...')
         self.peripheral = None
-        cb.scan_for_peripherals([])
+        cb.scan_for_peripherals()
 
     def did_disconnect_peripheral(self, p, *args):
         self.app._set_status('Desconectado — escaneando...')
@@ -244,7 +244,7 @@ class KeyboardDelegate:
         self.peripheral = None
         self.char = None
         self._ready.clear()
-        cb.scan_for_peripherals([])
+        cb.scan_for_peripherals()
 
     def did_discover_services(self, p, *args):
         for svc in p.services:
@@ -292,7 +292,7 @@ class KeyboardApp(ui.View):
         cb.set_central_delegate(self.delegate)
         # Also scan directly in case did_update_state doesn't fire
         try:
-            cb.scan_for_peripherals([])
+            cb.scan_for_peripherals()
         except Exception:
             pass
 
@@ -476,7 +476,7 @@ class KeyboardApp(ui.View):
             cb.stop_scan()
         except Exception:
             pass
-        cb.scan_for_peripherals([])
+        cb.scan_for_peripherals()
 
     def _do_nfl(self, sender):
         def _go():
