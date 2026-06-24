@@ -30,6 +30,7 @@
             label = "MT_SHIFT";
             #binding-cells = <2>;
             bindings = <&kp>, <&kp>;
+
             tapping-term-ms = <280>;
             flavor = "balanced";
             quick-tap-ms = <175>;
@@ -170,10 +171,10 @@
         default_layer {
             display-name = "QWERTY";
             bindings = <
-&kp ESCAPE                   &kp Q               &kp W           &kp E               &kp R             &kp T                            &none         &kp Y        &kp U              &kp I                &kp O            &kp P                           &kp BSPC
+&kp ESCAPE                   &kp Q               &kp W           &kp E               &kp R                   &kp T                            &none         &kp Y        &kp U                    &kp I                &kp O            &kp P                           &kp BSPC
 &kp TAB                      &mt LEFT_COMMAND A  &mt LEFT_ALT S  &mt LEFT_CONTROL D  &mt_shift LEFT_SHIFT F  &kp G                     &none  &none  &none  &kp H        &mt_shift RIGHT_SHIFT J  &mt RIGHT_CONTROL K  &mt RIGHT_ALT L  &mt RIGHT_COMMAND SINGLE_QUOTE  &kp LS(SINGLE_QUOTE)
-&mt LA(LC(DELETE)) CAPSLOCK  &kp Z               &kp X           &kp C               &kp V             &kp B        &kp SPACE           &none         &kp N        &kp M              &mt SEMICOLON COMMA  &td_mt           &kp FSLH                        &mt LEFT_ALT ENTER
-                                                                 &kp LEFT_CONTROL    &lt 3 LEFT_ALT    &lt 2 ENTER                                    &lt 1 SPACE  &lt 5 DEL          &kp RALT
+&mt LA(LC(DELETE)) CAPSLOCK  &kp Z               &kp X           &kp C               &kp V                   &kp B        &kp SPACE           &none         &kp N        &kp M                    &mt SEMICOLON COMMA  &td_mt           &kp FSLH                        &mt LEFT_ALT ENTER
+                                                                 &kp LEFT_CONTROL    &lt 3 LEFT_ALT          &lt 2 ENTER                                    &lt 1 SPACE  &lt 5 DEL                &kp RALT
             >;
 
             // sensor-bindings = <&inc_dec_kp C_VOLUME_UP C_VOLUME_DOWN>;
@@ -184,7 +185,7 @@
             bindings = <
 &bhv_code_block 0 GRAVE  &kp LS(NUMBER_1)      &kp LS(NUMBER_2)  &kp LS(NUMBER_3)  &kp LS(NUMBER_4)  &kp LS(NUMBER_5)                   &none         &kp LS(NUMBER_6)       &kp LS(NUMBER_7)     &kp LS(NUMBER_8)  &kp LS(NUMBER_9)  &kp LS(NUMBER_0)  &kp BSPC
 &kp LS(GRAVE)            &kp KP_N1             &kp KP_N2         &kp KP_N3         &kp KP_N4         &kp KP_N5                   &none  &none  &none  &kp KP_N6              &kp KP_N7            &kp KP_N8         &kp KP_N9         &kp KP_N0         &mt LS(BACKSLASH) BACKSLASH
-&trans                   &kp LS(LEFT_BRACKET)  &kp LEFT_BRACKET  &kp LESS_THAN     &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp LS(RIGHT_BRACKET)  &mt MINUS LS(EQUAL)  &trans            &trans            &kp EQUAL         &mt LS(MINUS) MINUS
+&kp KP_NLCK              &kp LS(LEFT_BRACKET)  &kp LEFT_BRACKET  &kp LESS_THAN     &kp GREATER_THAN  &kp RIGHT_BRACKET  &none           &none         &kp LS(RIGHT_BRACKET)  &mt MINUS LS(EQUAL)  &trans            &trans            &kp EQUAL         &mt LS(MINUS) MINUS
                                                                  &trans            &kp LEFT_ALT      &trans                                           &trans                 &trans               &trans
             >;
         };
