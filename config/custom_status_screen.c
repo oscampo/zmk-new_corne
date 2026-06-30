@@ -102,18 +102,6 @@ static ssize_t on_bitmap_write(struct bt_conn *conn,
     BT_UUID_DECLARE_128(BT_UUID_128_ENCODE( \
         0x00001525, 0x1212, 0xefde, 0x1523, 0x785feabcd123ULL))
 
-/* ── MTU exchange on connect ─────────────────────────────────────────────── */
-
-static void on_connected(struct bt_conn *conn, uint8_t err)
-{
-    if (err) return;
-    bt_gatt_exchange_mtu(conn, NULL);
-}
-
-BT_CONN_CB_DEFINE(kbd_display_conn_cb) = {
-    .connected = on_connected,
-};
-
 BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
     BT_GATT_PRIMARY_SERVICE(KBD_DISPLAY_SVC_UUID),
     BT_GATT_CHARACTERISTIC(KBD_BITMAP_CHAR_UUID,
