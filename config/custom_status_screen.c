@@ -7,6 +7,11 @@
  *   Receives 1bpp portrait frames (68×160, 1440 bytes) in chunks:
  *   [2B offset LE][2B total LE][data]
  *   On complete frame: decode + rotate 90° CW into LVGL canvas.
+ *   Chunks land in a ping-pong buffer (frame_bufs[write_idx]); on frame
+ *   completion write_idx/read_idx swap under irq_lock so a new frame's
+ *   chunks never overwrite the buffer flush_canvas is currently decoding.
+ *   Every 20th drawn frame logs received/drawn/backlog counters at INFO
+ *   for diagnosing display lag vs. BLE delivery.
  *
  * Characteristic 0x1526 — Read + Notify, 2 bytes
  *   Byte 0:
@@ -25,6 +30,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 #include <lvgl.h>
 #include <string.h>
 
@@ -39,6 +45,8 @@
 #define ZMK_BLE_PROFILE_COUNT 5
 #endif
 
+LOG_MODULE_REGISTER(kbd_display, CONFIG_ZMK_LOG_LEVEL);
+
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_ROLE_PERIPHERAL)
 
 /* ── Bitmap display dimensions ───────────────────────────────────────────── */
@@ -52,8 +60,16 @@
 
 /* ── Buffers ─────────────────────────────────────────────────────────────── */
 
-static uint8_t    frame_buf[FRAME_BYTES];
+/* Ping-pong pair: chunks always land in frame_bufs[write_idx]; on frame
+ * completion write_idx/read_idx swap under irq_lock so flush_canvas never
+ * decodes a buffer that's still being written by a new incoming frame. */
+static uint8_t    frame_bufs[2][FRAME_BYTES];
+static volatile uint8_t write_idx = 0;
+static volatile uint8_t read_idx  = 1;
 static lv_color_t canvas_buf[DST_W * DST_H];
+
+static uint32_t frames_received;
+static uint32_t frames_drawn;
 
 /* ── LVGL canvas ─────────────────────────────────────────────────────────── */
 
@@ -73,11 +89,11 @@ static void create_canvas(lv_obj_t *screen)
 
 /* ── Decode 1bpp portrait + rotate 90° CW → RGB565 landscape ────────────── */
 
-static void decode_and_rotate(void)
+static void decode_and_rotate(const uint8_t *src)
 {
     for (uint16_t py = 0; py < SRC_H; py++) {
         for (uint16_t px = 0; px < SRC_W; px++) {
-            uint8_t byte = frame_buf[py * SRC_STRIDE + (px >> 3)];
+            uint8_t byte = src[py * SRC_STRIDE + (px >> 3)];
             int     lit  = (byte >> (7 - (px & 7))) & 1;
             uint16_t dx  = (DST_W - 1) - py;
             uint16_t dy  = px;
@@ -91,8 +107,15 @@ static void decode_and_rotate(void)
 static void flush_canvas(struct k_work *work)
 {
     if (!ble_canvas) return;
-    decode_and_rotate();
+    decode_and_rotate(frame_bufs[read_idx]);
     lv_obj_invalidate(ble_canvas);
+
+    frames_drawn++;
+    if (frames_drawn % 20 == 0) {
+        LOG_INF("kbd_display: received=%u drawn=%u (backlog=%d)",
+                frames_received, frames_drawn,
+                (int)(frames_received - frames_drawn));
+    }
 }
 
 static K_WORK_DEFINE(flush_work, flush_canvas);
@@ -144,8 +167,14 @@ static ssize_t on_bitmap_write(struct bt_conn *conn,
     if (chunk_offset + data_len > FRAME_BYTES) {
         return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
     }
-    memcpy(frame_buf + chunk_offset, data, data_len);
+    memcpy(frame_bufs[write_idx] + chunk_offset, data, data_len);
     if (chunk_offset + data_len == FRAME_BYTES) {
+        frames_received++;
+        unsigned int key = irq_lock();
+        uint8_t completed = write_idx;
+        write_idx = read_idx;
+        read_idx  = completed;
+        irq_unlock(key);
         k_work_submit(&flush_work);
     }
     return (ssize_t)len;
