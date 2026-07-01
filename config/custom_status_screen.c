@@ -8,11 +8,16 @@
  *   [2B offset LE][2B total LE][data]
  *   On complete frame: decode + rotate 90° CW into LVGL canvas.
  *
- * Characteristic 0x1526 — Read + Notify, 1 byte
- *   bit 0     : USB HID active (1 = host USB HID connected)
- *   bits [3:1]: active BLE profile index 0–4 (display as 1–5)
- *   bits [7:4]: reserved, always 0
- *   Notifies on BLE connect, profile change, USB state change.
+ * Characteristic 0x1526 — Read + Notify, 2 bytes
+ *   Byte 0:
+ *     bit 0     : USB HID active (1 = host USB HID connected)
+ *     bits [3:1]: active BLE profile index 0–4 (display as 1–5)
+ *     bits [7:4]: reserved, always 0
+ *   Byte 1:
+ *     bits [4:0]: bonded mask — bit i set if BLE profile i has a bonded peer
+ *                 (regardless of whether it's connected right now)
+ *     bits [7:5]: reserved, always 0
+ *   Notifies on BLE connect, profile change, USB/endpoint state change.
  *   Battery level: use standard BAS 0x180F / 0x2A19 (ZMK provides it).
  */
 
@@ -25,8 +30,14 @@
 
 #include <zmk/ble.h>
 #include <zmk/usb.h>
+#include <zmk/endpoints.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/events/endpoint_changed.h>
+
+#ifndef ZMK_BLE_PROFILE_COUNT
+#define ZMK_BLE_PROFILE_COUNT 5
+#endif
 
 #if !IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_ROLE_PERIPHERAL)
 
@@ -86,9 +97,9 @@ static void flush_canvas(struct k_work *work)
 
 static K_WORK_DEFINE(flush_work, flush_canvas);
 
-/* ── Status byte ─────────────────────────────────────────────────────────── */
+/* ── Status bytes ────────────────────────────────────────────────────────── */
 
-static uint8_t build_status_byte(void)
+static void build_status_bytes(uint8_t out[2])
 {
     uint8_t flags = 0;
 #if IS_ENABLED(CONFIG_ZMK_USB)
@@ -97,7 +108,16 @@ static uint8_t build_status_byte(void)
     }
 #endif
     flags |= (uint8_t)((zmk_ble_active_profile_index() & 0x07) << 1);
-    return flags;
+
+    uint8_t bonded = 0;
+    for (uint8_t i = 0; i < ZMK_BLE_PROFILE_COUNT; i++) {
+        if (!zmk_ble_profile_is_open(i)) {
+            bonded |= BIT(i);
+        }
+    }
+
+    out[0] = flags;
+    out[1] = bonded;
 }
 
 /* ── GATT callbacks ──────────────────────────────────────────────────────── */
@@ -135,17 +155,19 @@ static ssize_t on_status_read(struct bt_conn *conn,
                               const struct bt_gatt_attr *attr,
                               void *buf, uint16_t len, uint16_t offset)
 {
-    uint8_t status = build_status_byte();
+    uint8_t status[2];
+    build_status_bytes(status);
     return bt_gatt_attr_read(conn, attr, buf, len, offset,
-                             &status, sizeof(status));
+                             status, sizeof(status));
 }
 
 static void on_status_ccc_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
     if (value == BT_GATT_CCC_NOTIFY) {
         /* Client just subscribed — send current state immediately */
-        uint8_t status = build_status_byte();
-        bt_gatt_notify(NULL, attr - 1, &status, sizeof(status));
+        uint8_t status[2];
+        build_status_bytes(status);
+        bt_gatt_notify(NULL, attr - 1, status, sizeof(status));
     }
 }
 
@@ -179,14 +201,16 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
 
 static int status_event_listener(const zmk_event_t *eh)
 {
-    uint8_t status = build_status_byte();
-    bt_gatt_notify(NULL, &keyboard_display_svc.attrs[4], &status, sizeof(status));
+    uint8_t status[2];
+    build_status_bytes(status);
+    bt_gatt_notify(NULL, &keyboard_display_svc.attrs[4], status, sizeof(status));
     return ZMK_EV_EVENT_BUBBLE;
 }
 
 ZMK_LISTENER(kbd_status, status_event_listener);
 ZMK_SUBSCRIPTION(kbd_status, zmk_ble_active_profile_changed);
 ZMK_SUBSCRIPTION(kbd_status, zmk_usb_conn_state_changed);
+ZMK_SUBSCRIPTION(kbd_status, zmk_endpoint_changed);
 
 /* ── Canvas lifecycle ────────────────────────────────────────────────────── */
 
