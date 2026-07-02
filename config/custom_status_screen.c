@@ -180,9 +180,31 @@ static uint8_t  layout_row_tier[MAX_LAYOUT_ROWS];
 static uint16_t layout_row_y[MAX_LAYOUT_ROWS];
 static uint8_t  layout_row_count;
 
+/* Deferred, coalesced invalidate: CELL writes land directly in canvas_buf
+ * from the BT RX thread, but the actual LVGL invalidate is deferred to the
+ * system workqueue. Multiple CELL writes for the same logical update
+ * (e.g. two digits of a clock tick, two separate ATT writes) collapse into
+ * one k_work_submit — if the work is still PENDING when the next CELL
+ * arrives, resubmitting is a no-op, so LVGL's ~33ms render cycle never
+ * observes a torn intermediate state because nothing was marked dirty yet.
+ * This does not close the (much narrower) window where the work is already
+ * RUNNING when a new CELL lands — Zephyr reschedules it to run again after
+ * the current pass, but the in-flight invalidate can still fire on a
+ * partially-updated canvas_buf. A fully race-free design would double-
+ * buffer per logical update the way 0x1525's ping-pong does; this is the
+ * cheap fix for the dominant case, not a proof of zero tearing. */
+static void cell_invalidate_handler(struct k_work *work)
+{
+    if (ble_canvas) {
+        lv_obj_invalidate(ble_canvas);
+    }
+}
+
+static K_WORK_DEFINE(cell_invalidate_work, cell_invalidate_handler);
+
 /* Blit a cell (portrait source coords) into canvas_buf with the same
- * 90° CW rotation decode_and_rotate() uses, then invalidate only the
- * landscape rectangle that cell touches. */
+ * 90° CW rotation decode_and_rotate() uses. Invalidate is deferred —
+ * see cell_invalidate_handler(). */
 static void cell_blit(uint16_t x0, uint16_t y0, uint8_t w, uint8_t h,
                        const uint8_t *bitmap)
 {
@@ -201,14 +223,7 @@ static void cell_blit(uint16_t x0, uint16_t y0, uint8_t w, uint8_t h,
         }
     }
 
-    if (!ble_canvas) return;
-    lv_area_t area = {
-        .x1 = (lv_coord_t)((DST_W - 1) - (y0 + h - 1)),
-        .x2 = (lv_coord_t)((DST_W - 1) - y0),
-        .y1 = (lv_coord_t)x0,
-        .y2 = (lv_coord_t)(x0 + w - 1),
-    };
-    lv_obj_invalidate_area(ble_canvas, &area);
+    k_work_submit(&cell_invalidate_work);
 }
 
 static void handle_layout(const uint8_t *p, uint16_t len)
