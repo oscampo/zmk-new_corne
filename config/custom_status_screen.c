@@ -24,6 +24,19 @@
  *     bits [7:5]: reserved, always 0
  *   Notifies on BLE connect, profile change, USB/endpoint state change.
  *   Battery level: use standard BAS 0x180F / 0x2A19 (ZMK provides it).
+ *
+ * Characteristic 0x1527 — Write (WriteWithResponse), cell-grid protocol v1.1
+ *   Kept alongside 0x1525 for A/B comparison during migration; 0x1525 is
+ *   untouched. See zmk-companion docs/cell_grid_protocol.md for the full
+ *   spec. Three message types, dispatched on byte 0:
+ *     0x01 LAYOUT — run-length list of (tier_id, repeat) rows, ≤16 entries.
+ *                   Defines the active page's row structure; rare.
+ *     0x02 CELL   — one changed cell's packed 1bpp bitmap for
+ *                   (row_index, col_index) in the current LAYOUT.
+ *     0x03 CLEAR  — blank the canvas (fill black + full invalidate).
+ *   Firmware is stateless beyond canvas_buf + the current LAYOUT's row
+ *   tiers/Y-offsets; it never tracks per-cell content. Out-of-range LAYOUT
+ *   or CELL messages are rejected (logged, ignored) rather than applied.
  */
 
 #include <zephyr/kernel.h>
@@ -143,6 +156,171 @@ static void build_status_bytes(uint8_t out[2])
     out[1] = bonded;
 }
 
+/* ── Cell-grid protocol (0x1527) ─────────────────────────────────────────── */
+
+typedef struct {
+    uint8_t w, h;   /* cell pixel size */
+    uint8_t cols;   /* max columns for this tier on a 68px-wide row */
+    uint8_t bytes;  /* packed 1bpp bytes/cell = ceil(w/8) * h */
+} cell_tier_t;
+
+#define TIER_COUNT 7
+static const cell_tier_t CELL_TIERS[TIER_COUNT] = {
+    /* 0 small_impar  */ {  6, 10, 11, 10 },
+    /* 1 small_par    */ {  8, 13,  8, 13 },
+    /* 2 medium_impar */ {  9, 15,  7, 30 },
+    /* 3 medium_par   */ { 11, 20,  6, 40 },
+    /* 4 large_impar  */ { 13, 22,  5, 44 },
+    /* 5 large_par    */ { 16, 28,  4, 56 },
+    /* 6 micro        */ {  2,  2, 34,  2 },
+};
+
+#define MAX_LAYOUT_ROWS 80
+static uint8_t  layout_row_tier[MAX_LAYOUT_ROWS];
+static uint16_t layout_row_y[MAX_LAYOUT_ROWS];
+static uint8_t  layout_row_count;
+
+/* Blit a cell (portrait source coords) into canvas_buf with the same
+ * 90° CW rotation decode_and_rotate() uses, then invalidate only the
+ * landscape rectangle that cell touches. */
+static void cell_blit(uint16_t x0, uint16_t y0, uint8_t w, uint8_t h,
+                       const uint8_t *bitmap)
+{
+    uint8_t stride = (uint8_t)((w + 7) / 8);
+    for (uint8_t ly = 0; ly < h; ly++) {
+        uint16_t py = y0 + ly;
+        for (uint8_t lx = 0; lx < w; lx++) {
+            uint16_t px   = x0 + lx;
+            uint8_t  byte = bitmap[ly * stride + (lx >> 3)];
+            int      lit  = (byte >> (7 - (lx & 7))) & 1;
+            uint16_t dx   = (DST_W - 1) - py;
+            uint16_t dy   = px;
+            canvas_buf[dy * DST_W + dx] = lit
+                ? lv_color_white()
+                : lv_color_black();
+        }
+    }
+
+    if (!ble_canvas) return;
+    lv_area_t area = {
+        .x1 = (lv_coord_t)((DST_W - 1) - (y0 + h - 1)),
+        .x2 = (lv_coord_t)((DST_W - 1) - y0),
+        .y1 = (lv_coord_t)x0,
+        .y2 = (lv_coord_t)(x0 + w - 1),
+    };
+    lv_obj_invalidate_area(ble_canvas, &area);
+}
+
+static void handle_layout(const uint8_t *p, uint16_t len)
+{
+    if (len < 2) {
+        LOG_WRN("cell_grid: LAYOUT too short (len=%u)", len);
+        return;
+    }
+    uint8_t entry_count = p[1];
+    if (entry_count > 16 || (uint16_t)(2 + entry_count * 2) > len) {
+        LOG_WRN("cell_grid: malformed LAYOUT (entry_count=%u len=%u)",
+                entry_count, len);
+        return;
+    }
+
+    uint8_t  tmp_tier[MAX_LAYOUT_ROWS];
+    uint16_t tmp_y[MAX_LAYOUT_ROWS];
+    uint16_t row = 0;
+    uint16_t y   = 0;
+
+    for (uint8_t i = 0; i < entry_count; i++) {
+        uint8_t tier_id = p[2 + i * 2];
+        uint8_t repeat  = p[3 + i * 2];
+        if (tier_id >= TIER_COUNT || repeat < 1 || repeat > 80) {
+            LOG_WRN("cell_grid: malformed LAYOUT entry %u (tier=%u repeat=%u)",
+                    i, tier_id, repeat);
+            return;
+        }
+        for (uint8_t r = 0; r < repeat; r++) {
+            if (row >= MAX_LAYOUT_ROWS || y + CELL_TIERS[tier_id].h > SRC_H) {
+                LOG_WRN("cell_grid: LAYOUT exceeds 160px or row cap "
+                        "(row=%u y=%u tier_h=%u)", row, y, CELL_TIERS[tier_id].h);
+                return;
+            }
+            tmp_tier[row] = tier_id;
+            tmp_y[row]    = y;
+            y   += CELL_TIERS[tier_id].h;
+            row++;
+        }
+    }
+
+    memcpy(layout_row_tier, tmp_tier, row * sizeof(tmp_tier[0]));
+    memcpy(layout_row_y, tmp_y, row * sizeof(tmp_y[0]));
+    layout_row_count = (uint8_t)row;
+}
+
+static void handle_cell(const uint8_t *p, uint16_t len)
+{
+    if (len < 4) {
+        LOG_WRN("cell_grid: CELL too short (len=%u)", len);
+        return;
+    }
+    uint8_t row_index  = p[1];
+    uint8_t col_index  = p[2];
+    uint8_t bitmap_len = p[3];
+
+    if (row_index >= layout_row_count) {
+        LOG_WRN("cell_grid: CELL row_index %u out of range (count=%u)",
+                row_index, layout_row_count);
+        return;
+    }
+    uint8_t tier_id = layout_row_tier[row_index];
+    const cell_tier_t *tier = &CELL_TIERS[tier_id];
+
+    if (col_index >= tier->cols || bitmap_len != tier->bytes ||
+        (uint16_t)(4 + bitmap_len) > len) {
+        LOG_WRN("cell_grid: CELL out of range (row=%u col=%u tier=%u "
+                "bitmap_len=%u)", row_index, col_index, tier_id, bitmap_len);
+        return;
+    }
+
+    uint16_t x0 = (uint16_t)col_index * tier->w;
+    uint16_t y0 = layout_row_y[row_index];
+    cell_blit(x0, y0, tier->w, tier->h, p + 4);
+}
+
+static void handle_clear(void)
+{
+    memset(canvas_buf, 0, sizeof(canvas_buf)); /* RGB565 black = 0x0000 */
+    if (ble_canvas) {
+        lv_obj_invalidate(ble_canvas);
+    }
+}
+
+static ssize_t on_cell_grid_write(struct bt_conn *conn,
+                                  const struct bt_gatt_attr *attr,
+                                  const void *buf, uint16_t len,
+                                  uint16_t offset, uint8_t flags)
+{
+    ARG_UNUSED(conn); ARG_UNUSED(attr); ARG_UNUSED(offset); ARG_UNUSED(flags);
+
+    if (len < 1) {
+        return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
+    }
+    const uint8_t *p = (const uint8_t *)buf;
+    switch (p[0]) {
+    case 0x01:
+        handle_layout(p, len);
+        break;
+    case 0x02:
+        handle_cell(p, len);
+        break;
+    case 0x03:
+        handle_clear();
+        break;
+    default:
+        LOG_WRN("cell_grid: unknown msg_type 0x%02x", p[0]);
+        return BT_GATT_ERR(BT_ATT_ERR_VALUE_NOT_ALLOWED);
+    }
+    return (ssize_t)len;
+}
+
 /* ── GATT callbacks ──────────────────────────────────────────────────────── */
 
 static ssize_t on_bitmap_write(struct bt_conn *conn,
@@ -211,6 +389,9 @@ static void on_status_ccc_changed(const struct bt_gatt_attr *attr, uint16_t valu
 #define KBD_STATUS_CHAR_UUID \
     BT_UUID_DECLARE_128(BT_UUID_128_ENCODE( \
         0x00001526, 0x1212, 0xefde, 0x1523, 0x785feabcd123ULL))
+#define KBD_CELLGRID_CHAR_UUID \
+    BT_UUID_DECLARE_128(BT_UUID_128_ENCODE( \
+        0x00001527, 0x1212, 0xefde, 0x1523, 0x785feabcd123ULL))
 
 BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
     BT_GATT_PRIMARY_SERVICE(KBD_DISPLAY_SVC_UUID),
@@ -224,6 +405,10 @@ BT_GATT_SERVICE_DEFINE(keyboard_display_svc,
         BT_GATT_PERM_READ, on_status_read, NULL, NULL),
     BT_GATT_CCC(on_status_ccc_changed,
         BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+    /* 0x1527 — cell-grid write (attrs[6]=decl, attrs[7]=value) */
+    BT_GATT_CHARACTERISTIC(KBD_CELLGRID_CHAR_UUID,
+        BT_GATT_CHRC_WRITE,
+        BT_GATT_PERM_WRITE, NULL, on_cell_grid_write, NULL),
 );
 
 /* ── ZMK event listener — notifies 0x1526 on profile/USB change ─────────── */
